@@ -55,7 +55,7 @@ function NeuralNetwork( T::Type,
 end
 NeuralNetwork(widths::Vector{Int}) = NeuralNetwork(Float32, widths)
 function (net::NeuralNetwork)(x, p=net.θ)
-    net._net(x, p)[1]
+    net._net(x, p)[:]
 end
 function Base.show(io::IO, net::NeuralNetwork)
     print(io, "NeuralNetwork: ")
