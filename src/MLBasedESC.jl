@@ -21,7 +21,8 @@ include("energy_quadratic.jl")
 
 export NeuralNetwork, ∇NN, get_weights, get_biases
 export EnergyFunction, QuadraticEnergyFunction, HyperParameters
-export controller, update!, predict, params_to_npy
+export gradient, controller, update!, predict, params_to_npy
 export mass_matrix
+export vec2tril
 
 end

@@ -54,9 +54,12 @@ function flat_to_tril(k::Integer, n::Integer)
     return Int(row_index + 1), Int(column_index + 1)
 end
 
-function LinearAlgebra.tril(v::AbstractVector)
+
+function vec2tril(v::AbstractVector)
     N = length(v)
     M = floor(Integer, (-1 + sqrt(1 + 4*2*N))/2)
     diag_ind = [Int(i*(i+1)/2) for i=1:M]
     sum( diagm(-i => getindex(v, diag_ind[1+i:end] .- i)) for i=0:M-1 )
 end
+
+

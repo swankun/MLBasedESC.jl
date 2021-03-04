@@ -7,15 +7,23 @@ mutable struct QuadraticEnergyFunction{T<:Real}
     num_states::Integer
     dynamics::Function      # ẋ::Vector{T} = f(x::Vector{T},u::T), u is control input
     loss::Function          # J::T = r(x::Array{T,2})
+    ∂H∂q::Function
+    mass_matrix::Function
+    input_matrix::AbstractVecOrMat{T}
 end
-function QuadraticEnergyFunction( T::DataType, 
-                    num_states::Integer,
-                    dynamics::Function,
-                    loss::Function ;
-                    num_hidden_nodes::Integer=64,
-                    initθ_path::String="",
-                    symmetric::Bool=false )
-
+function QuadraticEnergyFunction( 
+    T::DataType, 
+    num_states::Integer,
+    dynamics::Function,
+    loss::Function,
+    ∂H∂q::Function,
+    mass_matrix::Function,
+    input_matrix::AbstractVecOrMat
+    ;
+    num_hidden_nodes::Integer=64,
+    initθ_path::String="",
+    symmetric::Bool=false 
+)
     
     # Verify dynamics(x,u)
     dx = dynamics(rand(T, num_states), rand(T))
@@ -66,26 +74,121 @@ function QuadraticEnergyFunction( T::DataType,
         _θind,
         num_states,
         dynamics,
-        loss
+        loss,
+        ∂H∂q,
+        mass_matrix,
+        T.(input_matrix)
     )
 end
 function mass_matrix(Hd::QuadraticEnergyFunction{T}) where {T<:Real}
     dim_q = Int(Hd.num_states / 2)
     Md(q, θ=Hd.θ) = begin
-        L = Hd.Lθ_net( q, getindex(θ, Hd._θind[:L]) ) |> tril
+        θL = @view θ[ Hd._θind[:L] ]
+        L = Hd.Lθ_net( q, θL ) |> vec2tril
         return L*L' + eps(T)*I(dim_q)
     end
 end
-function (Hd::QuadraticEnergyFunction)(q, qdot, θ=Hd.θ)
+function (Hd::QuadraticEnergyFunction{T})(q, p, θ=Hd.θ) where {T<:Real}
     Md = mass_matrix(Hd)
-    ke = 0.5 * (qdot' * mass_matrix(Hd)(q, θ) * qdot)[1]
-    pe = Hd.Vθ_net( q, getindex(θ, Hd._θind[:V]) )[1]
+    ke = 0.5f0 * (p' * mass_matrix(Hd)(q, θ) * p)[1]
+    pe = Hd.Vθ_net( q, @view θ[Hd._θind[:V]] )[1]
     return ke + pe
 end
 function Base.show(io::IO, Hd::QuadraticEnergyFunction)
     print(io, "QuadraticEnergyFunction{$(typeof(Hd).parameters[1])} with $(Int(Hd.num_states))-dimensional input")
     print(io, "\n\nHyperParameters: \n"); show(io, Hd.hyper);
     print(io, "\n")
-    print(io, "Mass Matrix "); show(io, Hd.Lθ_net); print(io, "\n")
+    print(io, "Mass matrix "); show(io, Hd.Lθ_net); print(io, "\n")
     print(io, "Potential energy "); show(io, Hd.Vθ_net)
 end
+
+
+function gradient(Hd::QuadraticEnergyFunction{T}) where {T<:Real}
+    """
+    Returns ∇ₓHd(x, ẋ, θ), the gradient of Hd with respect to x
+    """
+    N = Int(Hd.num_states/2)
+    ∇q_Hd(q, p, θ=Hd.θ) = begin
+        θL = θ[ Hd._θind[:L] ]
+        θV = θ[ Hd._θind[:V] ]
+
+        L = Hd.Lθ_net( q, θL ) |> vec2tril
+        ∂L∂q = [ vec2tril(col) for col in eachcol(∇NN(Hd.Lθ_net, q, θL)) ]
+        ∂Md∂q = [ (L * dL') + (dL * L') for dL in ∂L∂q ]
+        ∂V∂q = ∇NN(Hd.Vθ_net, q, θV) 
+
+        T(0.5) * vcat((dot(p, Q*p) for Q in ∂Md∂q)...) .+ ∂V∂q[:]
+    end 
+end
+
+
+function controller(Hd::QuadraticEnergyFunction{T}) where {T<:Real}
+    Md = mass_matrix(Hd)
+    M = Hd.mass_matrix
+    G = Hd.input_matrix
+    ∇q_Hd = gradient(Hd)
+    u(q, p, θ=Hd.θ) = begin
+        Gu_es = Hd.∂H∂q(q, p) .- inv(Md(q, θ)) * inv(M(q)) * ∇q_Hd(q, p, θ)
+        return sum( ((G'*G)\G')[:] .* Gu_es )
+    end
+end
+
+
+function predict(Hd::QuadraticEnergyFunction{T}, x0::Vector, θ::Vector=Hd.θ, tf=Hd.hyper.time_horizon) where {T<:Real}
+    u = controller(Hd)
+    n = Int(Hd.num_states/2)
+    Array( 
+        OrdinaryDiffEq.solve(
+            ODEProblem(
+                (x,p,t) -> Hd.dynamics(x, 1f-3*u(x[1:n],x[n+1:end],p)), 
+                # (x,p,t) -> Hd.dynamics(x, 0f0), 
+                x0, 
+                (0f0, tf), 
+                θ
+            ), 
+            Tsit5(), abstol=1e-4, reltol=1e-4,  
+            u0=x0, 
+            p=θ, 
+            saveat=Hd.hyper.step_size, 
+            sensealg=TrackerAdjoint()
+        )
+    )
+end
+
+
+function update!(Hd::QuadraticEnergyFunction{T}, x0s::Vector{Array{T,1}}; verbose=false) where {T<:Real}
+    num_traj = length(x0s)
+    Md = mass_matrix(Hd)
+    M = Hd.mass_matrix
+    G = Hd.input_matrix
+    annihilator = sum
+    ∇q_Hd = gradient(Hd)
+
+    function _loss(θ)
+        losses = bufferfrom( zeros(T, num_traj) )
+        for (j, x0) in enumerate(x0s)
+            ϕ = predict(Hd,x0,θ)
+            # pde = annihilator( Hd.∂H∂q(q, p) .- inv(Md(q, θ)) * inv(M(q)) * ∇q_Hd(q, p, θ) )
+            losses[j] = Hd.loss( ϕ ) # + pde
+        end
+        mean_loss = sum(losses)/num_traj
+        reg_loss = Hd.hyper.regularization_coeff*sum(abs, θ)/length(θ)
+        return mean_loss + reg_loss, copy(losses), x0s
+    end
+    
+    res = DiffEqFlux.sciml_train(
+        _loss, 
+        Hd.θ, 
+        ADAM(), 
+        cb=throttle( (args...)->_update_cb(args...; do_print=verbose), 0.5 ), 
+        maxiters=Hd.hyper.epochs_per_minibatch, 
+        progress=false
+    )
+    if !any(isnan.(res.minimizer))
+        Hd.θ = res.minimizer
+        set_params(Hd.Lθ_net, res.minimizer[Hd._θind[:L]])
+        set_params(Hd.Vθ_net, res.minimizer[Hd._θind[:V]])
+    end
+    nothing
+end
+

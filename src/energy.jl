@@ -66,13 +66,21 @@ function Base.show(io::IO, Hd::EnergyFunction)
 end
 
 
-function compute_control(Hd::EnergyFunction, x, θ=Hd.θ)
+function gradient(Hd::EnergyFunction{T}) where {T<:Real}
+    """
+    Returns ∇ₓHd(x, θ), the gradient of Hd with respect to x
+    """
     nn_dim = last(last(Hd.net.inds).flat)
-    ∇NNx = ∇NN(Hd.net, x, θ[1:nn_dim])
-    return sum(∇NNx .* θ[nn_dim+1 : end]) 
+    (x, θ=Hd.θ) -> ∇NN(Hd.net, x, θ[1:nn_dim])
 end
+
+
 function controller(Hd::EnergyFunction)
-    return (x, θ) -> compute_control(Hd, x, θ)
+    nn_dim = last(last(Hd.net.inds).flat)
+    ∇x_Hd = gradient(Hd)
+    u(x, θ=Hd.θ) = begin
+        (∇x_Hd(x, θ) * θ[nn_dim+1 : end])[1]
+    end
 end
 
 

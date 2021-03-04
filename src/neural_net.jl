@@ -55,7 +55,7 @@ function NeuralNetwork( T::Type,
 end
 NeuralNetwork(widths::Vector{Int}) = NeuralNetwork(Float32, widths)
 function (net::NeuralNetwork)(x, p=net.θ)
-    net._net(x, p)[:]
+    net._net(x, p)
 end
 function Base.show(io::IO, net::NeuralNetwork)
     print(io, "NeuralNetwork: ")
@@ -98,8 +98,13 @@ end
 
 
 function ∇NN(net::NeuralNetwork, x, θ=net.θ)
-    net.layers[end].σ.( 
+    ∂NNx = net.layers[end].σ.( 
         get_weights(net, θ, net.depth) * 
         prod(net.σ′.(_applychain(net, θ, i, x)) .* get_weights(net, θ, i) for i = net.depth-1:-1:1) 
-    )[:] .* (_issymmetric(net) ? 2x : one.(x))
+    )
+    if _issymmetric(net)
+        return ∂NNx .* hcat((fill(2*y, last(net.widths)) for y in x)...)
+    else
+        return ∂NNx
+    end
 end
