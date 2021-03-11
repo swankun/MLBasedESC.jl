@@ -9,7 +9,7 @@ mutable struct QuadraticEnergyFunction{T<:Real}
     loss::Function          # J::T = r(x::Array{T,2})
     ∂H∂q::Function
     mass_matrix::Function
-    input_matrix::AbstractVecOrMat{T}
+    input_matrix::VecOrMat{T}
 end
 function QuadraticEnergyFunction( 
     T::DataType, 
@@ -80,17 +80,18 @@ function QuadraticEnergyFunction(
         T.(input_matrix)
     )
 end
-function mass_matrix(Hd::QuadraticEnergyFunction{T}) where {T<:Real}
+function mass_matrix_inv(Hd::QuadraticEnergyFunction{T}) where {T<:Real}
     dim_q = Int(Hd.num_states / 2)
-    Md(q, θ=Hd.θ) = begin
+    Md_inv(q, θ=Hd.θ) = begin
         θL = @view θ[ Hd._θind[:L] ]
         L = Hd.Lθ_net( q, θL ) |> vec2tril
-        return L*L' + eps(T)*I(dim_q)
+        # return L*L' + eps(T)*I(dim_q)
+        return L*L' + T(1e-4)*I(dim_q)
     end
 end
 function (Hd::QuadraticEnergyFunction{T})(q, p, θ=Hd.θ) where {T<:Real}
-    Md = mass_matrix(Hd)
-    ke = 0.5f0 * (p' * mass_matrix(Hd)(q, θ) * p)[1]
+    Md_inv = mass_matrix_inv(Hd)
+    ke = 0.5f0 * (p' * Md_inv(q, θ) * p)[1]
     pe = Hd.Vθ_net( q, @view θ[Hd._θind[:V]] )[1]
     return ke + pe
 end
@@ -114,21 +115,22 @@ function gradient(Hd::QuadraticEnergyFunction{T}) where {T<:Real}
 
         L = Hd.Lθ_net( q, θL ) |> vec2tril
         ∂L∂q = [ vec2tril(col) for col in eachcol(∇NN(Hd.Lθ_net, q, θL)) ]
-        ∂Md∂q = [ (L * dL') + (dL * L') for dL in ∂L∂q ]
+        ∂Mdinv∂q = [ (L * dL') + (dL * L') for dL in ∂L∂q ]
         ∂V∂q = ∇NN(Hd.Vθ_net, q, θV) 
 
-        T(0.5) * vcat((dot(p, Q*p) for Q in ∂Md∂q)...) .+ ∂V∂q[:]
+        T(0.5) * vcat((dot(p, Q*p) for Q in ∂Mdinv∂q)...) .+ ∂V∂q[:]
+        # T(0.5) * [dot(p, Q*p) for Q in ∂Mdinv∂q] .+ ∂V∂q[:]
     end 
 end
 
 
 function controller(Hd::QuadraticEnergyFunction{T}) where {T<:Real}
-    Md = mass_matrix(Hd)
+    Md_inv = mass_matrix_inv(Hd)
     M = Hd.mass_matrix
     G = Hd.input_matrix
     ∇q_Hd = gradient(Hd)
     u(q, p, θ=Hd.θ) = begin
-        Gu_es = Hd.∂H∂q(q, p) .- inv(Md(q, θ)) * inv(M(q)) * ∇q_Hd(q, p, θ)
+        Gu_es = Hd.∂H∂q(q, p) .- (M(q) * Md_inv(q,θ)) \ ∇q_Hd(q, p, θ)
         return sum( ((G'*G)\G')[:] .* Gu_es )
     end
 end
@@ -140,7 +142,7 @@ function predict(Hd::QuadraticEnergyFunction{T}, x0::Vector, θ::Vector=Hd.θ, t
     Array( 
         OrdinaryDiffEq.solve(
             ODEProblem(
-                (x,p,t) -> Hd.dynamics(x, 1f-3*u(x[1:n],x[n+1:end],p)), 
+                (x,p,t) -> Hd.dynamics( x, T(1e-3)*u(x[1:n],x[n+1:end],p) ), 
                 # (x,p,t) -> Hd.dynamics(x, 0f0), 
                 x0, 
                 (0f0, tf), 
@@ -158,18 +160,23 @@ end
 
 function update!(Hd::QuadraticEnergyFunction{T}, x0s::Vector{Array{T,1}}; verbose=false) where {T<:Real}
     num_traj = length(x0s)
-    Md = mass_matrix(Hd)
+    n = Int(Hd.num_states/2)
+    Md_inv = mass_matrix_inv(Hd)
     M = Hd.mass_matrix
     G = Hd.input_matrix
-    annihilator = sum
     ∇q_Hd = gradient(Hd)
 
     function _loss(θ)
         losses = bufferfrom( zeros(T, num_traj) )
         for (j, x0) in enumerate(x0s)
             ϕ = predict(Hd,x0,θ)
-            # pde = annihilator( Hd.∂H∂q(q, p) .- inv(Md(q, θ)) * inv(M(q)) * ∇q_Hd(q, p, θ) )
-            losses[j] = Hd.loss( ϕ ) # + pde
+            pde_loss = zero(T)
+            for x in eachcol(ϕ)
+                q = x[1:n]
+                p = x[n+1:end]
+                # pde_loss += sum( Hd.∂H∂q(q, p) .- (M(q) * Md_inv(q,θ)) \ ∇q_Hd(q, p, θ) )
+            end
+            losses[j] = Hd.loss(ϕ) + pde_loss
         end
         mean_loss = sum(losses)/num_traj
         reg_loss = Hd.hyper.regularization_coeff*sum(abs, θ)/length(θ)
