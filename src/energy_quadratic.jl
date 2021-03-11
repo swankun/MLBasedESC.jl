@@ -1,7 +1,7 @@
 mutable struct QuadraticEnergyFunction{T<:Real}
     hyper::HyperParameters{T}
-    Lθ_net::NeuralNetwork{T}
-    Vθ_net::NeuralNetwork{T}
+    Md_inv::PSDNeuralNetwork{T}
+    Vd::NeuralNetwork{T}
     θ::Vector{T}
     _θind::Dict{Symbol,UnitRange{Int64}}
     num_states::Integer
@@ -39,18 +39,19 @@ function QuadraticEnergyFunction(
     # Neural network
     dim_q = Int(num_states / 2)
     num_triangular = Int(dim_q*(dim_q+1)/2)
-    Lθ_net = NeuralNetwork(T, 
-        [dim_q, num_hidden_nodes, num_hidden_nodes, num_triangular],
-        symmetric=symmetric
-    )
-    Vθ_net = NeuralNetwork(T, 
+    # Md_inv = NeuralNetwork(T, 
+    #     [dim_q, num_hidden_nodes, num_hidden_nodes, num_triangular],
+    #     symmetric=symmetric
+    # )
+    Md_inv = PSDNeuralNetwork(T, dim_q, symmetric=symmetric)
+    Vd = NeuralNetwork(T, 
         [dim_q, num_hidden_nodes, num_hidden_nodes, 1],
         symmetric=symmetric
     )
-    θ = [ Lθ_net.θ; Vθ_net.θ ]
+    θ = [ Md_inv.net.θ; Vd.θ ]
     _θind = Dict(
-        :L => 1 : length(Lθ_net.θ), 
-        :V => length(Lθ_net.θ)+1 : length(Lθ_net.θ)+length(Vθ_net.θ)
+        :Md => 1 : length(Md_inv.net.θ), 
+        :Vd => length(Md_inv.net.θ)+1 : length(Md_inv.net.θ)+length(Vd.θ)
     )
 
     # Load parameters if applicable
@@ -58,8 +59,8 @@ function QuadraticEnergyFunction(
         initθ = pop!( load(initθ_path) ).second.θ
         if isequal(size(initθ), size(θ))
             θ = deepcopy(initθ)
-            set_params(Lθ_net, getindex(θ, _θind[:L]))
-            set_params(Vθ_net, getindex(θ, _θind[:V]))
+            set_params(Md_inv, getindex(θ, _θind[:Md]))
+            set_params(Vd, getindex(θ, _θind[:Vd]))
         else
             @error "Incompatible initθ dimension. Needed $(size(θ)), got $(size(initθ))."
         end
@@ -68,8 +69,8 @@ function QuadraticEnergyFunction(
     # Create instance
     Hd = QuadraticEnergyFunction{T}(
         hyper,
-        Lθ_net,
-        Vθ_net,
+        Md_inv,
+        Vd,
         θ,
         _θind,
         num_states,
@@ -80,27 +81,17 @@ function QuadraticEnergyFunction(
         T.(input_matrix)
     )
 end
-function mass_matrix_inv(Hd::QuadraticEnergyFunction{T}) where {T<:Real}
-    dim_q = Int(Hd.num_states / 2)
-    Md_inv(q, θ=Hd.θ) = begin
-        θL = @view θ[ Hd._θind[:L] ]
-        L = Hd.Lθ_net( q, θL ) |> vec2tril
-        # return L*L' + eps(T)*I(dim_q)
-        return L*L' + T(1e-4)*I(dim_q)
-    end
-end
 function (Hd::QuadraticEnergyFunction{T})(q, p, θ=Hd.θ) where {T<:Real}
-    Md_inv = mass_matrix_inv(Hd)
-    ke = 0.5f0 * (p' * Md_inv(q, θ) * p)[1]
-    pe = Hd.Vθ_net( q, @view θ[Hd._θind[:V]] )[1]
+    ke = 0.5f0 * (p' * Hd.Md_inv(q, θ) * p)[1]
+    pe = Hd.Vd( q, @view θ[Hd._θind[:Vd]] )[1]
     return ke + pe
 end
 function Base.show(io::IO, Hd::QuadraticEnergyFunction)
     print(io, "QuadraticEnergyFunction{$(typeof(Hd).parameters[1])} with $(Int(Hd.num_states))-dimensional input")
     print(io, "\n\nHyperParameters: \n"); show(io, Hd.hyper);
     print(io, "\n")
-    print(io, "Mass matrix "); show(io, Hd.Lθ_net); print(io, "\n")
-    print(io, "Potential energy "); show(io, Hd.Vθ_net)
+    print(io, "Mass matrix "); show(io, Hd.Md_inv); print(io, "\n")
+    print(io, "Potential energy "); show(io, Hd.Vd)
 end
 
 
@@ -108,29 +99,23 @@ function gradient(Hd::QuadraticEnergyFunction{T}) where {T<:Real}
     """
     Returns ∇ₓHd(x, ẋ, θ), the gradient of Hd with respect to x
     """
-    N = Int(Hd.num_states/2)
     ∇q_Hd(q, p, θ=Hd.θ) = begin
-        θL = θ[ Hd._θind[:L] ]
-        θV = θ[ Hd._θind[:V] ]
-
-        L = Hd.Lθ_net( q, θL ) |> vec2tril
-        ∂L∂q = [ vec2tril(col) for col in eachcol(∇NN(Hd.Lθ_net, q, θL)) ]
-        ∂Mdinv∂q = [ (L * dL') + (dL * L') for dL in ∂L∂q ]
-        ∂V∂q = ∇NN(Hd.Vθ_net, q, θV) 
-
-        T(0.5) * vcat((dot(p, Q*p) for Q in ∂Mdinv∂q)...) .+ ∂V∂q[:]
-        # T(0.5) * [dot(p, Q*p) for Q in ∂Mdinv∂q] .+ ∂V∂q[:]
+        θMd = @view θ[ Hd._θind[:Md] ]
+        θVd = @view θ[ Hd._θind[:Vd] ]
+        ∂Md_inv∂q = gradient(Hd.Md_inv, q, θMd)
+        ∂V∂q = gradient(Hd.Vd, q, θVd) 
+        T(0.5) * vcat((dot(p, Q*p) for Q in ∂Md_inv∂q)...) .+ ∂V∂q[:]
     end 
 end
 
 
 function controller(Hd::QuadraticEnergyFunction{T}) where {T<:Real}
-    Md_inv = mass_matrix_inv(Hd)
     M = Hd.mass_matrix
     G = Hd.input_matrix
     ∇q_Hd = gradient(Hd)
     u(q, p, θ=Hd.θ) = begin
-        Gu_es = Hd.∂H∂q(q, p) .- (M(q) * Md_inv(q,θ)) \ ∇q_Hd(q, p, θ)
+        θMd = @view θ[ Hd._θind[:Md] ]
+        Gu_es = Hd.∂H∂q(q, p) .- (M(q) * Hd.Md_inv(q,θMd)) \ ∇q_Hd(q, p, θ)
         return sum( ((G'*G)\G')[:] .* Gu_es )
     end
 end
@@ -161,22 +146,27 @@ end
 function update!(Hd::QuadraticEnergyFunction{T}, x0s::Vector{Array{T,1}}; verbose=false) where {T<:Real}
     num_traj = length(x0s)
     n = Int(Hd.num_states/2)
-    Md_inv = mass_matrix_inv(Hd)
     M = Hd.mass_matrix
     G = Hd.input_matrix
     ∇q_Hd = gradient(Hd)
+
+    function _pde_loss(θ)
+        θMd = @view θ[ Hd._θind[:Md] ]
+        pde_loss = zero(T)
+        map(1:trajectories) do j
+            for x in eachcol(ϕ)
+                q = x[1:n]
+                p = x[n+1:end]
+                pde_loss += sum( Hd.∂H∂q(q, p) .- (M(q) * Hd.Md_inv(q,θMd)) \ ∇q_Hd(q, p, θ) )
+            end
+        end
+    end
 
     function _loss(θ)
         losses = bufferfrom( zeros(T, num_traj) )
         for (j, x0) in enumerate(x0s)
             ϕ = predict(Hd,x0,θ)
-            pde_loss = zero(T)
-            for x in eachcol(ϕ)
-                q = x[1:n]
-                p = x[n+1:end]
-                # pde_loss += sum( Hd.∂H∂q(q, p) .- (M(q) * Md_inv(q,θ)) \ ∇q_Hd(q, p, θ) )
-            end
-            losses[j] = Hd.loss(ϕ) + pde_loss
+            losses[j] = Hd.loss(ϕ)
         end
         mean_loss = sum(losses)/num_traj
         reg_loss = Hd.hyper.regularization_coeff*sum(abs, θ)/length(θ)
@@ -193,8 +183,8 @@ function update!(Hd::QuadraticEnergyFunction{T}, x0s::Vector{Array{T,1}}; verbos
     )
     if !any(isnan.(res.minimizer))
         Hd.θ = res.minimizer
-        set_params(Hd.Lθ_net, res.minimizer[Hd._θind[:L]])
-        set_params(Hd.Vθ_net, res.minimizer[Hd._θind[:V]])
+        set_params(Hd.Md_inv, res.minimizer[Hd._θind[:Md]])
+        set_params(Hd.Vd, res.minimizer[Hd._θind[:Vd]])
     end
     nothing
 end

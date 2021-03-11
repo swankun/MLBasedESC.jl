@@ -71,7 +71,7 @@ function gradient(Hd::EnergyFunction{T}) where {T<:Real}
     Returns ∇ₓHd(x, θ), the gradient of Hd with respect to x
     """
     nn_dim = last(last(Hd.net.inds).flat)
-    (x, θ=Hd.θ) -> ∇NN(Hd.net, x, θ[1:nn_dim])
+    (x, θ=Hd.θ) -> gradient(Hd.net, x, θ[1:nn_dim])
 end
 
 
