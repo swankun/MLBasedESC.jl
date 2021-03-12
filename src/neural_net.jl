@@ -117,7 +117,7 @@ mutable struct PSDNeuralNetwork{T<:Real}
 end 
 function PSDNeuralNetwork( T::Type,
     n::Integer,
-    depth::Integer=2, 
+    depth::Integer=3, 
     σ::Function=elu, 
     σ′::Function=delu ;
     num_hidden_nodes=16,
