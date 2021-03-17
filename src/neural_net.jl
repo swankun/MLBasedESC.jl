@@ -120,10 +120,15 @@ function PSDNeuralNetwork( T::Type,
     depth::Integer=3, 
     σ::Function=elu, 
     σ′::Function=delu ;
+    nin::Integer=n,
     num_hidden_nodes=16,
     symmetric::Bool=false
 )
-    widths = vcat(n, fill(num_hidden_nodes, depth-1)..., Int(n*(n+1)/2))
+    widths = vcat(
+        nin, 
+        fill(num_hidden_nodes, depth-1)..., 
+        Int(n*(n+1)/2)
+    )
     net = NeuralNetwork(T, widths, σ, σ′, symmetric=symmetric)
     PSDNeuralNetwork{T}(n, net)
 end
@@ -140,6 +145,10 @@ set_params(S::PSDNeuralNetwork, p::Vector{<:Real}) = set_params(S.net, p)
 get_weights(S::PSDNeuralNetwork, θ, layer::Integer) = get_weights(S.net, θ, layer)
 get_biases(S::PSDNeuralNetwork, θ, layer::Integer) = get_biases(S.net, θ, layer)
 function gradient(S::PSDNeuralNetwork, x, θ=S.net.θ)
+    """
+    Returns Array{Matrix{T}} with 'nin' elements, and the ith matrix is
+    the gradient of output w.r.t. the ith input
+    """
     L = S.net.chain(x, θ) |> vec2tril
     ∂L∂x = [ vec2tril(col) for col in eachcol(gradient(S.net, x, θ)) ]
     return [ (L * dL') + (dL * L') for dL in ∂L∂x ]
