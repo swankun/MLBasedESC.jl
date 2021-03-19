@@ -1,20 +1,24 @@
-struct LayerParamIndices{T<:Integer} 
-    flat :: UnitRange{T}
-    W    :: Array{T,2}
-    b    :: UnitRange{T}
+export NeuralNetwork, get_weights, get_biases, gradient
+
+const IndexType = UInt16
+
+struct LayerParamIndices
+    flat :: UnitRange{IndexType}
+    W    :: Array{IndexType, 2}
+    b    :: UnitRange{IndexType}
 end
 
-
-mutable struct NeuralNetwork{T<:Real}
-    depth  :: Int
-    widths :: Vector{Int}
-    σ      :: Function
-    σ′     :: Function
-    chain   :: Union{Chain, DiffEqFlux.FastChain, Function}
-    layers :: Tuple{Vararg{Union{Dense, DiffEqFlux.FastDense}}}
+mutable struct NeuralNetwork{T<:Real, ChainType<:Union{Chain, FastChain}, LayerType<:Union{Dense, FastDense}, F1, F2}
+    depth  :: IndexType
+    widths :: Vector{IndexType}
+    σ      :: F1
+    σ′     :: F2
+    chain  :: ChainType
+    layers :: Tuple{Vararg{LayerType}}
     θ      :: Vector{T}
     inds   :: Vector{LayerParamIndices}    # indices for (flattened θ, weights, biases) of each layer
 end
+
 function NeuralNetwork( T::Type,
                         widths::Vector{Int}, 
                         σ::Function=elu, 
@@ -25,6 +29,8 @@ function NeuralNetwork( T::Type,
     layers = Tuple([
         FastDense(
             widths[i-1], widths[i], i==depth+1 ? identity : σ,
+            # widths[i-1], widths[i], i==depth+1 ? relu : σ,
+            # widths[i-1], widths[i], i==depth+1 ? x->x.^2 : σ,
             initW=glorot_uniform, initb=glorot_uniform
         ) for i in 2:depth+1
     ])
@@ -46,22 +52,30 @@ function NeuralNetwork( T::Type,
         b = (nin*nout+1):len
         push!( 
             inds, 
-            LayerParamIndices{Int}(flat, W, b) 
+            LayerParamIndices(flat, W, b) 
         )
     end
     @assert length(inds) == depth
 
-    NeuralNetwork{T}(depth, widths, σ, σ′, chain, layers, θ, inds)
+    NeuralNetwork{T, typeof(chain), eltype(layers), typeof(σ), typeof(σ′)}(
+        depth, widths, σ, σ′, chain, layers, θ, inds
+    )
 end
+
 NeuralNetwork(widths::Vector{Int}) = NeuralNetwork(Float32, widths)
+
 function (net::NeuralNetwork)(x, p=net.θ)
     net.chain(x, p)
+    # net.chain([1.0], p)
 end
-function Base.show(io::IO, net::NeuralNetwork)
-    print(io, "NeuralNetwork: ")
-    print(io, "widths = "); show(io, net.widths); print(io, ", ")
+
+function Base.show(io::IO, net::NeuralNetwork{T,C,D}) where {T,C,D}
+    print(io, "NeuralNetwork{$(T),$(C),$(D)}, \n")
+    print(io, "widths = $(Int.(net.widths))"); print(io, ", \n")
     print(io, "σ = "); show(io, net.σ); print(io, " ")
 end
+
+
 
 
 function set_params(net::NeuralNetwork, p::Vector{<:Real})
@@ -72,23 +86,26 @@ function get_weights(net::NeuralNetwork, θ, layer::Integer)
     @view θ[ net.inds[layer].flat ][ net.inds[layer].W ]
 end
 
-
 function get_biases(net::NeuralNetwork, θ, layer::Integer)
     @view θ[ net.inds[layer].flat ][ net.inds[layer].b ]
 end
 
 
-function _applychain(net::NeuralNetwork, θ, layers::Tuple, input)
-    if layers isa Tuple{Integer}
-        get_weights(net, θ, first(layers)) * net.chain.layers[1](input, θ) + 
-            get_biases(net, θ, first(layers))
-    else
-        get_weights(net, θ, first(layers)) * net.σ.(_applychain(net,θ,first(Base.tail(layers)), input)) + 
-            get_biases(net, θ, first(layers))
-    end
-end
-_applychain(net::NeuralNetwork, θ, i::Int, x) = _applychain(net, θ, Tuple(i:-1:1), x)
 
+
+function _applychain(net::NeuralNetwork, θ, layers::Tuple, input)
+    get_weights(net, θ, first(layers)+1) * 
+        net.σ.(_applychain(net,θ,Base.tail(layers),input)) + 
+        # elu.(_applychain(net,θ,Base.tail(layers),input)) + 
+        # _applychain(net,θ,Base.tail(layers), input) + 
+        get_biases(net, θ, first(layers)+1)
+end
+function _applychain(net::NeuralNetwork, θ, ::Tuple{}, input)
+    get_weights(net, θ, 1) * 
+        net.chain.layers[1](input, θ) + 
+        get_biases(net, θ, 1)
+end
+_applychain(net::NeuralNetwork, θ, i::Int, x) = _applychain(net, θ, Tuple(i-1:-1:1), x)
 
 function _issymmetric(net::NeuralNetwork)
     input = rand(eltype(net.θ), net.widths[1])
@@ -97,24 +114,30 @@ end
 @nograd _issymmetric
 
 
+
+
 function gradient(net::NeuralNetwork, x, θ=net.θ)
-    ∂NNx = net.layers[end].σ.( 
+    ∂NNx = identity.( 
         get_weights(net, θ, net.depth) * 
         prod(net.σ′.(_applychain(net, θ, i, x)) .* get_weights(net, θ, i) for i = net.depth-1:-1:1) 
-    )
+    ) 
     if _issymmetric(net)
-        return ∂NNx .* hcat((fill(2*y, last(net.widths)) for y in x)...)
+        return ∂NNx .* reduce(hcat, [fill(eltype(x)(2)*y, last(net.widths)) for y in x])
     else
         return ∂NNx
+        # return drelu.(_applychain(net, θ, net.depth, x)) .* ∂NNx
+        # return (2f0 * _applychain(net, θ, net.depth, x)) .* ∂NNx
     end
 end
 
 
 
-mutable struct PSDNeuralNetwork{T<:Real}
-    n::Integer
-    net::NeuralNetwork{T}
+
+mutable struct PSDNeuralNetwork{N<:NeuralNetwork}
+    n::Int
+    net::N
 end 
+
 function PSDNeuralNetwork( T::Type,
     n::Integer,
     depth::Integer=3, 
@@ -130,20 +153,24 @@ function PSDNeuralNetwork( T::Type,
         Int(n*(n+1)/2)
     )
     net = NeuralNetwork(T, widths, σ, σ′, symmetric=symmetric)
-    PSDNeuralNetwork{T}(n, net)
+    PSDNeuralNetwork{typeof(net)}(n, net)
 end
-function (S::PSDNeuralNetwork{T})(x, p=S.net.θ) where {T<:Real}
+
+function (S::PSDNeuralNetwork)(x, p=S.net.θ)
     L = S.net.chain(x, p) |> vec2tril
-    return L*L' + T(1e-4)*I(S.n)
+    return L*L' + eltype(x)(1e-4)*I(S.n)
 end
+
 function Base.show(io::IO, S::PSDNeuralNetwork)
     print(io, "$(S.n) × $(S.n) positive semidefinite matrix NeuralNetwork: ")
     print(io, "widths = "); show(io, S.net.widths); print(io, ", ")
     print(io, "σ = "); show(io, S.net.σ); print(io, " ")
 end
+
 set_params(S::PSDNeuralNetwork, p::Vector{<:Real}) = set_params(S.net, p)
 get_weights(S::PSDNeuralNetwork, θ, layer::Integer) = get_weights(S.net, θ, layer)
 get_biases(S::PSDNeuralNetwork, θ, layer::Integer) = get_biases(S.net, θ, layer)
+
 function gradient(S::PSDNeuralNetwork, x, θ=S.net.θ)
     """
     Returns Array{Matrix{T}} with 'nin' elements, and the ith matrix is

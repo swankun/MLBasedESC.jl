@@ -1,16 +1,22 @@
-mutable struct EnergyFunction{T<:Real}
-    hyper::HyperParameters{T}
-    net::NeuralNetwork{T}
+export EnergyFunction, gradient, controller, 
+    update!, predict, params_to_npy
+
+
+mutable struct EnergyFunction{T<:Real, HY, NE, F1, F2} 
+    hyper::HY
+    net::NE
     θ::Vector{T}
-    num_states::T
-    dynamics::Function      # ẋ::Vector{T} = f(x::Vector{T},u::T), u is control input
-    loss::Function          # J::T = r(x::Array{T,2})
+    num_states::Int
+    dim_q::Int
+    dynamics::F1      # ẋ::Vector{T} = f(x::Vector{T},u::T), u is control input
+    loss::F2          # J::T = r(x::Array{T,2})
 end
 function EnergyFunction( T::DataType, 
-                    num_states::Integer,
+                    num_states::Int,
                     dynamics::Function,
                     loss::Function ;
-                    num_hidden_nodes::Integer=64,
+                    dim_q::Int=Int(num_states/2),
+                    num_hidden_nodes::Int=64,
                     initθ_path::String="",
                     symmetric::Bool=false )
 
@@ -31,7 +37,8 @@ function EnergyFunction( T::DataType,
         [num_states, num_hidden_nodes, num_hidden_nodes, 1],
         symmetric=symmetric
     )
-    θ = [ net.θ; T.(glorot_uniform(num_states)) ]
+    n_gains = isequal(dim_q, num_states/2) ? num_states : Int(dim_q*2)
+    θ = [ net.θ; T.(glorot_uniform(n_gains)) ]
 
     # Load parameters if applicable
     if !isempty(initθ_path)
@@ -45,11 +52,12 @@ function EnergyFunction( T::DataType,
     end
 
     # Create instance
-    Hd = EnergyFunction{T}(
+    Hd = EnergyFunction{T, typeof(hyper), typeof(net), typeof(dynamics), typeof(loss)}(
         hyper,
         net,
         θ,
         num_states,
+        dim_q,
         dynamics,
         loss
     )
@@ -66,12 +74,30 @@ function Base.show(io::IO, Hd::EnergyFunction)
 end
 
 
+function _get_input_jacobian(Hd::EnergyFunction{T}, x) where {T<:Real}
+    nx = Hd.num_states
+    nq = Hd.dim_q
+    J = zeros(eltype(x), nx, nq*2)
+    @inbounds for i = 1:nq*2
+        if i <= nq
+            J[2*i-1,i] = -x[2*i]
+            J[2*i,i] = x[2*i-1]
+        else
+            J[i+nq,i] = one(eltype(x))
+        end
+    end
+    return J
+end
 function gradient(Hd::EnergyFunction{T}) where {T<:Real}
     """
     Returns ∇ₓHd(x, θ), the gradient of Hd with respect to x
     """
     nn_dim = last(last(Hd.net.inds).flat)
-    (x, θ=Hd.θ) -> gradient(Hd.net, x, θ[1:nn_dim])
+    if Hd.dim_q == Hd.num_states/2
+        (x, θ=Hd.θ) -> gradient(Hd.net, x, θ[1:nn_dim])
+    else
+        (x, θ=Hd.θ) -> gradient(Hd.net, x, θ[1:nn_dim]) * _get_input_jacobian(Hd, x)
+    end
 end
 
 
@@ -82,9 +108,7 @@ function controller(Hd::EnergyFunction)
         (∇x_Hd(x, θ) * θ[nn_dim+1 : end])[1]
     end
 end
-
-
-function predict(Hd::EnergyFunction, x0::Vector, θ::Vector=Hd.θ, tf=Hd.hyper.time_horizon)
+function predict(Hd::EnergyFunction, x0::Vector, θ=Hd.θ, tf=Hd.hyper.time_horizon)
     u = controller(Hd)
     Array( 
         OrdinaryDiffEq.solve(
@@ -102,8 +126,6 @@ function predict(Hd::EnergyFunction, x0::Vector, θ::Vector=Hd.θ, tf=Hd.hyper.t
         )
     )
 end
-
-
 function update!(Hd::EnergyFunction{T}, x0s::Vector{Array{T,1}}; verbose=false) where {T<:Real}
     num_traj = length(x0s)
     nn_dim   = last(last(Hd.net.inds).flat)
@@ -132,8 +154,6 @@ function update!(Hd::EnergyFunction{T}, x0s::Vector{Array{T,1}}; verbose=false) 
     end
     nothing
 end
-
-
 function _update_cb(ϕ, batch_loss, losses, x0s; do_print=false)
     if any(isnan.(ϕ))
         @warn("params are NaN, skipping training")
