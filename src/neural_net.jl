@@ -83,11 +83,13 @@ function set_params(net::NeuralNetwork, p::Vector{<:Real})
 end
 
 function get_weights(net::NeuralNetwork, θ, layer::Integer)
-    @view θ[ net.inds[layer].flat ][ net.inds[layer].W ]
+    θ[ net.inds[layer].flat ][ net.inds[layer].W ]
+    # @view θ[ net.inds[layer].flat ][ net.inds[layer].W ]  # breaks ReverseDiff w.r.t θ
 end
 
 function get_biases(net::NeuralNetwork, θ, layer::Integer)
-    @view θ[ net.inds[layer].flat ][ net.inds[layer].b ]
+    θ[ net.inds[layer].flat ][ net.inds[layer].b ]
+    # @view θ[ net.inds[layer].flat ][ net.inds[layer].b ] # breaks ReverseDiff w.r.t θ
 end
 
 

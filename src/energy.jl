@@ -22,8 +22,8 @@ function EnergyFunction( T::DataType,
 
     
     # Verify dynamics(x,u)
-    dx = dynamics(rand(T, num_states), rand(T))
-    @assert isequal(valtype(dx), T) "Expected type-stable function ẋ::Vector{T} = dynamics(x::Vector{T}, u::T) where {T<:Real}."
+    # dx = dynamics(rand(T, num_states), rand(T))
+    # @assert isequal(valtype(dx), T) "Expected type-stable function ẋ::Vector{T} = dynamics(x::Vector{T}, u::T) where {T<:Real}."
 
     # Verify loss()
     J = loss(rand(T,2))
@@ -99,34 +99,45 @@ function gradient(Hd::EnergyFunction{T}) where {T<:Real}
         (x, θ=Hd.θ) -> gradient(Hd.net, x, θ[1:nn_dim]) * _get_input_jacobian(Hd, x)
     end
 end
+function gradient(Hd::EnergyFunction{T}, x, θ) where {T<:Real}
+    nn_dim = last(last(Hd.net.inds).flat)
+    gradient(Hd.net, x, θ[1:nn_dim]) * _get_input_jacobian(Hd, x)
+end
 
 
 function controller(Hd::EnergyFunction)
     nn_dim = last(last(Hd.net.inds).flat)
     ∇x_Hd = gradient(Hd)
     u(x, θ=Hd.θ) = begin
-        (∇x_Hd(x, θ) * θ[nn_dim+1 : end])[1]
+        dot(∇x_Hd(x, θ), θ[nn_dim+1 : end])
     end
+end
+function controller(Hd::EnergyFunction, x, θ)
+    nn_dim = last(last(Hd.net.inds).flat)
+    dot(gradient(Hd, x, θ), θ[nn_dim+1 : end])
 end
 function predict(Hd::EnergyFunction, x0::Vector, θ=Hd.θ, tf=Hd.hyper.time_horizon)
     u = controller(Hd)
     Array( 
         OrdinaryDiffEq.solve(
             ODEProblem(
-                (x,p,t) -> Hd.dynamics(x, u(x,p)), 
+                # (x,p,t) -> Hd.dynamics(x, u(x,p)),
+                (dx,x,p,t) -> Hd.dynamics(dx, x, u(x,p)),
+                # (dx, x,p,t) -> Hd.dynamics(dx, x, controller(Hd,x,p)),
                 x0, 
-                (0f0, tf), 
+                (zero(eltype(x0)), tf), 
                 θ
             ), 
             Tsit5(), abstol=1e-4, reltol=1e-4,  
             u0=x0, 
             p=θ, 
             saveat=Hd.hyper.step_size, 
-            sensealg=TrackerAdjoint()
+            # sensealg=TrackerAdjoint()
+            sensealg=ReverseDiffAdjoint()
         )
     )
 end
-function update!(Hd::EnergyFunction{T}, x0s::Vector{Array{T,1}}; verbose=false) where {T<:Real}
+function update!(Hd::EnergyFunction{T}, x0s::Vector{Array{T,1}}; verbose=false, η=0.001) where {T<:Real}
     num_traj = length(x0s)
     nn_dim   = last(last(Hd.net.inds).flat)
 
@@ -143,7 +154,7 @@ function update!(Hd::EnergyFunction{T}, x0s::Vector{Array{T,1}}; verbose=false) 
     res = DiffEqFlux.sciml_train(
         _loss, 
         Hd.θ, 
-        ADAM(), 
+        ADAM(η), 
         cb=throttle( (args...)->_update_cb(args...; do_print=verbose), 0.5 ), 
         maxiters=Hd.hyper.epochs_per_minibatch, 
         progress=false
