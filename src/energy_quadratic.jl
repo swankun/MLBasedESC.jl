@@ -30,14 +30,6 @@ function QuadraticEnergyFunction(
     symmetric::Bool=false 
 )
     
-    # Verify dynamics(x,u)
-    dx = dynamics(rand(T, num_states), rand(T))
-    @assert isequal(valtype(dx), T) "Expected type-stable function ẋ::Vector{T} = dynamics(x::Vector{T}, u::T) where {T<:Real}."
-
-    # Verify loss()
-    J = loss(rand(T,2))
-    @assert isa(J, T) "Expected type-stable function J::T = r(x::Array{T,2}) where {T<:Real}."
-    
     # Verify dim_q
     @assert dim_q < num_states "Dimension of q must be less than dim([q; p])"
 

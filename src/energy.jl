@@ -20,15 +20,7 @@ function EnergyFunction( T::DataType,
                     initθ_path::String="",
                     symmetric::Bool=false )
 
-    
-    # Verify dynamics(x,u)
-    # dx = dynamics(rand(T, num_states), rand(T))
-    # @assert isequal(valtype(dx), T) "Expected type-stable function ẋ::Vector{T} = dynamics(x::Vector{T}, u::T) where {T<:Real}."
 
-    # Verify loss()
-    J = loss(rand(T,2))
-    @assert isa(J, T) "Expected type-stable function J::T = r(x::Array{T,2}) where {T<:Real}."
-    
     # Parameters setup    
     hyper = HyperParameters(T)
 
@@ -123,7 +115,8 @@ function predict(Hd::EnergyFunction, x0::Vector, θ=Hd.θ, tf=Hd.hyper.time_hori
             ODEProblem(
                 # (x,p,t) -> Hd.dynamics(x, u(x,p)),
                 (dx,x,p,t) -> Hd.dynamics(dx, x, u(x,p)),
-                # (dx, x,p,t) -> Hd.dynamics(dx, x, controller(Hd,x,p)),
+                # (x,p,t) -> Hd.dynamics(x,controller(Hd,x,p)),
+                # (dx,x,p,t) -> Hd.dynamics(dx, x, controller(Hd,x,p)),
                 x0, 
                 (zero(eltype(x0)), tf), 
                 θ
@@ -133,7 +126,8 @@ function predict(Hd::EnergyFunction, x0::Vector, θ=Hd.θ, tf=Hd.hyper.time_hori
             p=θ, 
             saveat=Hd.hyper.step_size, 
             # sensealg=TrackerAdjoint()
-            sensealg=ReverseDiffAdjoint()
+            # sensealg=ReverseDiffAdjoint()
+            sensealg=BacksolveAdjoint(autojacvec=ReverseDiffVJP(true))
         )
     )
 end
