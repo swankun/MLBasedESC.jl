@@ -1,4 +1,4 @@
-export NeuralNetwork, get_weights, get_biases, gradient
+export NeuralNetwork, get_weights, get_biases, gradient, hessian
 
 const IndexType = UInt16
 
@@ -98,8 +98,6 @@ end
 function _applychain(net::NeuralNetwork, θ, layers::Tuple, input)
     get_weights(net, θ, first(layers)+1) * 
         net.σ.(_applychain(net,θ,Base.tail(layers),input)) + 
-        # elu.(_applychain(net,θ,Base.tail(layers),input)) + 
-        # _applychain(net,θ,Base.tail(layers), input) + 
         get_biases(net, θ, first(layers)+1)
 end
 function _applychain(net::NeuralNetwork, θ, ::Tuple{}, input)
@@ -130,6 +128,10 @@ function gradient(net::NeuralNetwork, x, θ=net.θ)
         # return drelu.(_applychain(net, θ, net.depth, x)) .* ∂NNx
         # return (2f0 * _applychain(net, θ, net.depth, x)) .* ∂NNx
     end
+end
+
+function hessian(net::NeuralNetwork, x, θ=net.θ)
+    ReverseDiff.jacobian(y->gradient(net,y,θ)[:], x)
 end
 
 

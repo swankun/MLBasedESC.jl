@@ -39,10 +39,11 @@ function QuadraticEnergyFunction(
     # Neural network
     nin = isequal(dim_q, num_states/2) ? Int(dim_q) : Int(dim_q*2)
     Md_inv = PSDNeuralNetwork(T, dim_q, nin=nin, symmetric=symmetric)
-    Vd = NeuralNetwork(T, 
-        [nin, num_hidden_nodes, num_hidden_nodes, 1],
-        symmetric=symmetric
-    )
+    # Vd = NeuralNetwork(T, 
+    #     [nin, num_hidden_nodes, num_hidden_nodes, 1],
+    #     symmetric=symmetric
+    # )
+    Vd = SOSPoly(nin, 2)
     θ = [ Md_inv.net.θ; Vd.θ ]
     _θind = Dict(
         :Md => 1 : length(Md_inv.net.θ), 
@@ -216,13 +217,15 @@ function train_Md!(Hd::QuadraticEnergyFunction{T}; max_iters=100, η=0.01, batch
     # Optimize
     opt = ADAM(η)
     _loss(data, θ=Hd.θ) = begin
+        θVd = θ[Hd._θind[:Vd]]
         N = size(data, 1)
         +(
             # map(x -> pde_loss_Md(Hd,x,θ), data) |> sum |> x -> /(x,N),
             map(x -> pde_loss_Vd(Hd,x,θ), data) |> sum |> x -> /(x,N),
-            # map(x -> Hd.Vd(x,θ)[1], data) |> minimum |> x -> *(x,-one(x)),
-            # map(x -> mimic_quadratic_Vd(Hd,x,θ), data) |> sum |> x -> *(x,T(0.001))
-        ) #+ abs2(Hd.Vd(q0,θ)[1])
+            Hd.Vd(q0,θVd)[1],
+            # map(x -> -Hd.Vd(x,θVd)[1], data) |> sum, #x -> *(x,-one(x)),
+            # map(x -> mimic_quadratic_Vd(Hd,x,θ), data) |> sum |> x -> *(x,T(0.001)),
+        )
     end
     params_to_train = [Hd.θ; rand(T, Int(Hd.dim_q*(Hd.dim_q+1)/2))]
     for epoch in 1:max_iters
@@ -256,7 +259,7 @@ function controller(Hd::QuadraticEnergyFunction{T}) where {T<:Real}
         p = x[k+1:end]
         θMd = @view θ[ Hd._θind[:Md] ]
         Gu_es = Hd.∂H∂q(q, p) .- (M(q) * Hd.Md_inv(q,θMd)) \ ∇q_Hd(q, p, θ)
-        u_di = -T(0.1)*dot(G, T(2)*Hd.Md_inv(q,θMd)*p)
+        u_di = -T(0.025)*dot(G, T(2)*Hd.Md_inv(q,θMd)*p)
         return dot( (G'*G)\G', Gu_es ) + u_di
     end
 end

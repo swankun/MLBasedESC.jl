@@ -34,9 +34,9 @@ function dynamics!(dx, x, u)
 end
 function loss(x)
     dist = abs.(eltype(x)(10*2)*(one(eltype(x)) .- x[1,:])) +
-        abs.(eltype(x)(5*2)*(one(eltype(x)) .- x[3,:])) +
+        abs.(eltype(x)(1*2)*(one(eltype(x)) .- x[3,:])) +
         x[5,:].^2 +
-        x[6,:].^2 
+        eltype(x)(2)*x[6,:].^2 
     return eltype(x)(10)*minimum(map(sqrt, dist)) + sum(sqrt, dist)/length(x)
     # return sum(abs2, dist)
 end
@@ -64,7 +64,7 @@ end
 
 
 NX = 6
-Hd = EnergyFunction(Float32, NX, dynamics, loss, dim_q=2, num_hidden_nodes=32)
+Hd = EnergyFunction(Float32, NX, dynamics!, loss, dim_q=2, num_hidden_nodes=32)
 Hd_quad = QuadraticEnergyFunction(Float32,
     NX, dynamics, loss, ∂H∂q, mass_matrix, input_matrix, 
     dim_q=2, num_hidden_nodes=16, symmetric=!true
