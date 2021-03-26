@@ -71,7 +71,7 @@ Hd_quad = QuadraticEnergyFunction(Float32,
 )
 q = random_state(Float32)[1:4]
 p = rand(Float32, 2)
-
+x0 = Float32[cos(3), sin(3), cosd(0), sind(0), 0, 0]
 
 circle_constraints(x) = begin
     map(1:2) do i
@@ -172,15 +172,17 @@ plot_traj(Hd_quad, x0::Vector, tf=Hd_quad.hyper.time_horizon) = begin
     Hd_quad.hyper.time_horizon = typeof(old_tf)(tf)
     Hd_quad.hyper.step_size = typeof(old_tf)(tf/num_plot_samples)
     t = range(0, Hd_quad.hyper.time_horizon, step=Hd_quad.hyper.step_size)
-    x = to_states(predict(Hd_quad, x0))
+    x = predict(Hd_quad, x0)
+    xbar = to_states(x[1:6,:])
     Hd_quad.hyper.time_horizon = old_tf 
     Hd_quad.hyper.step_size = old_dt
     plot(
-        plot(t,x[1,:], label="q1"),
-        plot(t,x[2,:], label="q2"),
-        plot(t,x[3,:], label="q1dot"),
-        plot(t,x[4,:], label="q2dot"),
-        dpi=100, layout=(4,1)
+        plot(t,xbar[1,:], label="q1"),
+        plot(t,xbar[2,:], label="q2"),
+        plot(t,xbar[3,:], label="q1dot"),
+        plot(t,xbar[4,:], label="q2dot"),
+        plot(t,x[7,:], label="u"),
+        dpi=100, layout=(5,1)
     )
 end
 plot_traj(Hd_quad, tf=Hd_quad.hyper.time_horizon) = plot_traj(Hd_quad, random_state(Float32), tf)

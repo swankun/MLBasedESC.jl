@@ -1,5 +1,5 @@
 export QuadraticEnergyFunction, gradient, controller, predict,
-    pde_loss, train_Md!, reset_Vd!
+    pde_loss, train_Md!, reset_Vd!, set_params
 
 mutable struct QuadraticEnergyFunction{T<:Real, HY, N1, N2, F1, F2, F3, F4}
     hyper::HY
@@ -93,6 +93,12 @@ end
 
 ###############################################################################
 ###############################################################################
+
+function set_params(Hd::QuadraticEnergyFunction, θ)
+    Hd.θ = θ
+    set_params(Hd.Md_inv, getindex(θ, Hd._θind[:Md]))
+    set_params(Hd.Vd, getindex(θ, Hd._θind[:Vd]))
+end
 
 function reset_Vd!(Hd::QuadraticEnergyFunction) 
     T = first(typeof(Hd).parameters)
@@ -191,14 +197,14 @@ function mimic_quadratic_Vd(Hd::QuadraticEnergyFunction{T}, q, θ=Hd.θ) where {
     P = L*L' + diagm(fill(T(0.1), n))   
     (dot(qbar, P*qbar) - Hd.Vd(q, θ[Hd._θind[:Vd]])[1]) |> abs
 end
-function train_Md!(Hd::QuadraticEnergyFunction{T}; max_iters=100, η=0.01, batchsize=96) where {T<:Real}
+function train_Md!(Hd::QuadraticEnergyFunction{T}; max_iters=100, η=0.01, batchsize=80, step=0.1) where {T<:Real}
     
     # Generate data
     data = Vector{T}[]
     qmax = pif0; 
     qmin = -qmax
-    q1range = range(qmin, qmax, length=25)
-    q2range = range(qmin, qmax, length=25)
+    q1range = range(qmin, qmax, step=step)
+    q2range = range(qmin, qmax, step=step)
     q0 = T[cos(0); sin(0); cos(0); sin(0)]
     for q1 in q1range
         for q2 in q2range
@@ -259,13 +265,13 @@ function controller(Hd::QuadraticEnergyFunction{T}) where {T<:Real}
         p = x[k+1:end]
         θMd = @view θ[ Hd._θind[:Md] ]
         Gu_es = Hd.∂H∂q(q, p) .- (M(q) * Hd.Md_inv(q,θMd)) \ ∇q_Hd(q, p, θ)
-        u_di = -T(0.025)*dot(G, T(2)*Hd.Md_inv(q,θMd)*p)
+        u_di = -T(2)*dot(G, T(2)*Hd.Md_inv(q,θMd)*p)
         return dot( (G'*G)\G', Gu_es ) + u_di
     end
 end
 function predict(Hd::QuadraticEnergyFunction{T}, x0::Vector, θ::Vector=Hd.θ, tf=Hd.hyper.time_horizon) where {T<:Real}
     u = controller(Hd)
-    Array( 
+    x = Array( 
         OrdinaryDiffEq.solve(
             ODEProblem(
                 (x,p,t) -> Hd.dynamics( x, u(x,p) ), 
@@ -280,4 +286,5 @@ function predict(Hd::QuadraticEnergyFunction{T}, x0::Vector, θ::Vector=Hd.θ, t
             sensealg=TrackerAdjoint()
         )
     )
+    [x; mapslices(u, x, dims=1)]
 end
