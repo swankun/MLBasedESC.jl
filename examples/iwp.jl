@@ -40,15 +40,15 @@ function loss(x)
     return eltype(x)(10)*minimum(map(sqrt, dist)) + sum(sqrt, dist)/length(x)
     # return sum(abs2, dist)
 end
-function ∂H∂q(q, p)
-    # return [ -10f0*sin(q[1]); 0f0 ]
-    return [ -10f0*q[2]; 0f0 ]
-end
+∂KE∂q(q,j) = zeros(Float32, 2, 2)
+∂PE∂q(q) =  [ -10f0*q[2]; 0f0 ]
+∂H∂q(q,p) = eltype(q)(1/2)*sum([∂KE∂q(q,k)*p[k] for k=1:2])'*p + ∂PE∂q(q)
 function mass_matrix(q)
     return diagm(Float32[0.1; 0.2])
     # return Float32[0.1 0; 0 0.2]
 end
-input_matrix = Float32[-1; 1]
+const input_matrix = Float32[-1; 1]
+const input_matrix_perp = Float32[1 1]
 function random_state(T::DataType)
     q1 = T(π/6)*T(2)*(rand(T) - T(0.5))
     q2 = T(π/6)*T(2)*(rand(T) - T(0.5))
@@ -66,7 +66,7 @@ end
 NX = 6
 Hd = EnergyFunction(Float32, NX, dynamics!, loss, dim_q=2, num_hidden_nodes=32)
 Hd_quad = QuadraticEnergyFunction(Float32,
-    NX, dynamics, loss, ∂H∂q, mass_matrix, input_matrix, 
+    NX, dynamics, loss, ∂KE∂q, ∂PE∂q, mass_matrix, input_matrix, input_matrix_perp, 
     dim_q=2, num_hidden_nodes=16, symmetric=!true
 )
 q = random_state(Float32)[1:4]
