@@ -43,27 +43,17 @@ drelu(x::Real) = ifelse(x > 0.0, one(x), zero(x) )
 const pif0 = Float32(pi)
 
 
-function flat_to_tril(k::Integer, n::Integer)
-    #=
-      Takes the index k of a vector and convert to the
-      correponding indices for a lower triangular matrix
-      Based on https://stackoverflow.com/questions/242711/
-      Modified to work with one-based indices.
-    =#
-    k = (0 < k <= n*(n+1)/2) ? k - 1 : return;
-    J = n*(n+1)/2-1-k
-    K = floor((sqrt(8J+1)-1)/2)
-    column_index = n - 1 - K
-    row_index = k - n*(n+1)/2 + (K+1)*(K+2)/2
-    return Int(row_index + 1), Int(column_index + 1)
-end
-
-
 function vec2tril(v::AbstractVector)
     N = length(v)
     M = floor(Int, (-1 + sqrt(1 + 4*2*N))/2)
     diag_ind = [Int(i*(i+1)/2) for i=1:M]
     sum( [diagm(-i => getindex(v, diag_ind[1+i:end] .- i)) for i=0:M-1] )
+end
+function vec2tril(v::AbstractVector, ::Bool)
+    N = length(v)
+    M = floor(Int, (1 + sqrt(1 + 4*2*N))/2)
+    diag_ind = [Int(i*(i-1)/2) for i=2:M]
+    sum( [diagm(-i-1 => getindex(v, diag_ind[1+i:end] .- i)) for i=0:M-1] )
 end
 
 

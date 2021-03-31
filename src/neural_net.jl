@@ -1,6 +1,7 @@
-export NeuralNetwork, get_weights, get_biases, gradient, hessian
+export NeuralNetwork, PSDNeuralNetwork, SkewSymNeuralNetwork
+export get_weights, get_biases, gradient, hessian
 
-const IndexType = UInt16
+const IndexType = Int64
 
 struct LayerParamIndices
     flat :: UnitRange{IndexType}
@@ -183,4 +184,54 @@ function gradient(S::PSDNeuralNetwork, x, θ=S.net.θ)
     L = S.net.chain(x, θ) |> vec2tril
     ∂L∂x = [ vec2tril(col) for col in eachcol(gradient(S.net, x, θ)) ]
     return [ (L * dL') + (dL * L') for dL in ∂L∂x ]
+end
+
+
+
+mutable struct SkewSymNeuralNetwork{N<:NeuralNetwork}
+    n::Int
+    net::N
+end 
+
+function SkewSymNeuralNetwork( T::Type,
+    n::Integer,
+    depth::Integer=3, 
+    σ::Function=elu, 
+    σ′::Function=delu ;
+    nin::Integer=n,
+    num_hidden_nodes=16,
+    symmetric::Bool=false
+)
+    widths = vcat(
+        nin, 
+        fill(num_hidden_nodes, depth-1)..., 
+        Int(n*(n-1)/2)
+    )
+    net = NeuralNetwork(T, widths, σ, σ′, symmetric=symmetric)
+    SkewSymNeuralNetwork{typeof(net)}(n, net)
+end
+
+function (S::SkewSymNeuralNetwork)(x, p=S.net.θ)
+    L = vec2tril(S.net.chain(x, p), true)
+    return L - L'
+end
+
+function Base.show(io::IO, S::SkewSymNeuralNetwork)
+    print(io, "$(S.n) × $(S.n) positive semidefinite matrix NeuralNetwork: ")
+    print(io, "widths = "); show(io, S.net.widths); print(io, ", ")
+    print(io, "σ = "); show(io, S.net.σ); print(io, " ")
+end
+
+set_params(S::SkewSymNeuralNetwork, p::Vector{<:Real}) = set_params(S.net, p)
+get_weights(S::SkewSymNeuralNetwork, θ, layer::Integer) = get_weights(S.net, θ, layer)
+get_biases(S::SkewSymNeuralNetwork, θ, layer::Integer) = get_biases(S.net, θ, layer)
+
+function gradient(S::SkewSymNeuralNetwork, x, θ=S.net.θ)
+    """
+    Returns Array{Matrix{T}} with 'nin' elements, and the ith matrix is
+    the gradient of output w.r.t. the ith input
+    """
+    L = vec2tril(S.net.chain(x, θ), true)
+    ∂L∂x = [ vec2tril(col, true) for col in eachcol(gradient(S.net, x, θ)) ]
+    return [ dL - dL' for dL in ∂L∂x ]
 end

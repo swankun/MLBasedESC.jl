@@ -745,7 +745,7 @@ version = "2021.1.1+1"
 
 [[MLBasedESC]]
 deps = ["DiffEqFlux", "DiffEqSensitivity", "DynamicPolynomials", "Flux", "Formatting", "LinearAlgebra", "MultivariatePolynomials", "OrdinaryDiffEq", "Printf", "Random", "ReverseDiff", "Revise", "Zygote"]
-path = "/home/wankun/.julia/dev/MLBasedESC"
+path = "/home/wankunsirichotiyakul/.julia/dev/MLBasedESC"
 uuid = "0d2b134a-22b1-4965-bb14-6de4eebc6429"
 version = "0.1.0"
 
