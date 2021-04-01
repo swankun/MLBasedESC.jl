@@ -37,7 +37,8 @@ function loss(x)
         abs.(eltype(x)(1*2)*(one(eltype(x)) .- x[3,:])) +
         x[5,:].^2 +
         eltype(x)(2)*x[6,:].^2 
-    return eltype(x)(10)*minimum(map(sqrt, dist)) + sum(sqrt, dist)/length(x)
+    dist = sqrt.(dist)
+    return eltype(x)(10)*minimum(dist) + sum(dist)/length(x)
     # return sum(abs2, dist)
 end
 ∂KE∂q(q,j) = zeros(Float32, 2, 2)
@@ -173,6 +174,7 @@ plot_traj(Hd_quad, x0::Vector, tf=Hd_quad.hyper.time_horizon) = begin
     Hd_quad.hyper.step_size = typeof(old_tf)(tf/num_plot_samples)
     t = range(0, Hd_quad.hyper.time_horizon, step=Hd_quad.hyper.step_size)
     x = predict(Hd_quad, x0)
+    u = controller(Hd_quad)
     xbar = to_states(x[1:6,:])
     Hd_quad.hyper.time_horizon = old_tf 
     Hd_quad.hyper.step_size = old_dt
@@ -181,7 +183,7 @@ plot_traj(Hd_quad, x0::Vector, tf=Hd_quad.hyper.time_horizon) = begin
         plot(t,xbar[2,:], label="q2"),
         plot(t,xbar[3,:], label="q1dot"),
         plot(t,xbar[4,:], label="q2dot"),
-        plot(t,x[7,:], label="u"),
+        plot(t,vec(mapslices(u, x, dims=1)), label="u"),
         dpi=100, layout=(5,1)
     )
 end

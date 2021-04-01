@@ -9,6 +9,8 @@ using DiffEqFlux
 import DiffEqFlux: FastChain, FastDense, initial_params
 using DiffEqSensitivity
 
+using GalacticOptim
+
 using LinearAlgebra
 using Random: randperm
 using Revise

@@ -77,8 +77,8 @@ function _get_input_jacobian(Hd::EnergyFunction{T}, x) where {T<:Real}
     row = 1
     for i = 1:nqp
         if i in Hd.dim_S1
-            J[row,i] = -x[row]
-            J[row+1,i] = x[row+1]
+            J[row,i] = -x[row+1]
+            J[row+1,i] = x[row]
             row += 2
         else
             J[row,i] = one(eltype(x))
@@ -138,17 +138,18 @@ function update!(Hd::EnergyFunction{T}, x0s::Vector{Array{T,1}}; verbose=false, 
             losses[j] = Hd.loss( predict(Hd,x0,θ) )
         end
         mean_loss = sum(losses)/num_traj
-        reg_loss = Hd.hyper.regularization_coeff*sum(abs, θ[1:nn_dim])/nn_dim
+        reg_loss = Hd.hyper.regularization_coeff*sum(abs.(θ[1:nn_dim]))/nn_dim
         return mean_loss + reg_loss, copy(losses), x0s
     end
     
-    res = DiffEqFlux.sciml_train(
-        _loss, 
-        Hd.θ, 
-        ADAM(η), 
+    adtype = GalacticOptim.AutoZygote()
+    optf = GalacticOptim.OptimizationFunction((x,p) -> _loss(x), adtype)
+    optfunc = GalacticOptim.instantiate_function(optf, Hd.θ, adtype, nothing)
+    optprob = GalacticOptim.OptimizationProblem(optfunc, Hd.θ)
+    res = GalacticOptim.solve(optprob,
+        ADAM(η),
         cb=throttle( (args...)->_update_cb(args...; do_print=verbose), 0.5 ), 
-        maxiters=Hd.hyper.epochs_per_minibatch, 
-        progress=false
+        maxiters=Hd.hyper.epochs_per_minibatch
     )
     if !any(isnan.(res.minimizer))
         Hd.θ = res.minimizer
