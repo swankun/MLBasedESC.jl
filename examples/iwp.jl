@@ -64,7 +64,7 @@ end
 
 
 NX = 6
-Hd = EnergyFunction(Float32, NX, dynamics!, loss, dim_q=2, num_hidden_nodes=32)
+Hd = EnergyFunction(Float32, NX, dynamics!, loss, dim_S1=[1,2], num_hidden_nodes=32)
 Hd_quad = QuadraticEnergyFunction(Float32,
     NX, dynamics, loss, ∂KE∂q, ∂PE∂q, mass_matrix, input_matrix, input_matrix_perp, 
     dim_q=2, num_hidden_nodes=16, symmetric=!true
