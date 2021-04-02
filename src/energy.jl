@@ -133,7 +133,7 @@ function update!(Hd::EnergyFunction{T}, x0s::Vector{Array{T,1}}; verbose=false, 
     nn_dim   = last(last(Hd.net.inds).flat)
 
     function _loss(θ)
-        losses = bufferfrom( zeros(T, num_traj) )
+        losses = Zygote.bufferfrom( zeros(T, num_traj) )
         for (j, x0) in enumerate(x0s)
             losses[j] = Hd.loss( predict(Hd,x0,θ) )
         end

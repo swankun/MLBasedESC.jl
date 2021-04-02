@@ -112,7 +112,7 @@ function _issymmetric(net::NeuralNetwork)
     input = rand(eltype(net.θ), net.widths[1])
     !(net.chain.layers[1](input, net.θ) == input)
 end
-@nograd _issymmetric
+Zygote.@nograd _issymmetric
 
 
 

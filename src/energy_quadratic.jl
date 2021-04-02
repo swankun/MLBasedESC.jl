@@ -8,8 +8,8 @@ mutable struct QuadraticEnergyFunction{T<:Real, HY, N1, N2, N3, F1, F2, F3, F4, 
     J2::N3
     θ::Vector{T}
     _θind::Dict{Symbol,UnitRange{Int}}
-    num_states::Int
-    dim_q::Int
+    dim_input::Int
+    dim_S1::Vector{Int} # indiciates which dimensions of q is on 𝕊¹
     dynamics::F1      # ẋ::Vector{T} = f(x::Vector{T},u::T), u is control input
     loss::F2          # J::T = r(x::Array{T,2})
     ∂KE∂q::F3
@@ -18,9 +18,11 @@ mutable struct QuadraticEnergyFunction{T<:Real, HY, N1, N2, N3, F1, F2, F3, F4, 
     input_matrix::VecOrMat{T}
     input_matrix_perp::VecOrMat{T}
 end
+
+
 function QuadraticEnergyFunction( 
     T::DataType, 
-    num_states::Int,
+    dim_input::Int,
     dynamics::Function,
     loss::Function,
     ∂KE∂q::Function,
@@ -29,20 +31,18 @@ function QuadraticEnergyFunction(
     input_matrix::AbstractVecOrMat,
     input_matrix_perp::AbstractVecOrMat
     ;
-    dim_q::Int=Int(num_states/2),
+    dim_S1::Vector{Int}=Vector{Int}(),
     num_hidden_nodes::Int=64,
     initθ_path::String="",
     symmetric::Bool=false 
 )
     
-    # Verify dim_q
-    @assert dim_q < num_states "Dimension of q must be less than dim([q; p])"
-
     # Parameters setup    
     hyper = HyperParameters(T)
 
-    # Neural network
-    nin = isequal(dim_q, num_states/2) ? Int(dim_q) : Int(dim_q*2)
+    # Neural networks
+    dim_q = (dim_input - length(dim_S1)) ÷ 2
+    nin = length(dim_S1) + dim_q 
     Md_inv = PSDNeuralNetwork(T, dim_q, nin=nin, symmetric=symmetric)
     Vd = NeuralNetwork(T, 
         [nin, num_hidden_nodes, num_hidden_nodes, 1],
@@ -55,8 +55,8 @@ function QuadraticEnergyFunction(
         :Md => 1 : length(Md_inv.net.θ), 
         :Vd => length(Md_inv.net.θ)+1 : length(Md_inv.net.θ)+length(Vd.θ)
     )
+    prevlen = length(Md_inv.net.θ) + length(Vd.θ)
     for (k, Uk) in enumerate(J2)
-        prevlen = length(Md_inv.net.θ) + length(Vd.θ)
         thislen = length(Uk.net.θ)
         push!(_θind, 
             Symbol("U",k) => 
@@ -72,8 +72,8 @@ function QuadraticEnergyFunction(
         J2,
         θ,
         _θind,
-        num_states,
-        dim_q,
+        dim_input,
+        dim_S1,
         dynamics,
         loss,
         ∂KE∂q,
@@ -83,30 +83,39 @@ function QuadraticEnergyFunction(
         T.(input_matrix_perp),
     )
 end
+
+
 function (Hd::QuadraticEnergyFunction)(q, p, θ=Hd.θ) 
     ke = eltype(q)(1/2)*dot(p, Hd.Md_inv(q, θ)*p)
     pe = Hd.Vd( q, @view θ[Hd._θind[:Vd]] )[1]
     return ke + pe
 end
+
+
 function Base.show(io::IO, Hd::QuadraticEnergyFunction)
-    print(io, "QuadraticEnergyFunction{$(typeof(Hd).parameters[1])} with $(Int(Hd.num_states))-dimensional input")
+    print(io, "QuadraticEnergyFunction{$(typeof(Hd).parameters[1])} with $(Int(Hd.dim_input))-dimensional input")
     print(io, "\n\nHyperParameters: \n"); show(io, Hd.hyper);
     print(io, "\n")
     print(io, "Mass matrix "); show(io, Hd.Md_inv); print(io, "\n")
     print(io, "Potential energy "); show(io, Hd.Vd)
 end
 
+
 ###############################################################################
 ###############################################################################
+
 
 function set_params(Hd::QuadraticEnergyFunction, θ)
     Hd.θ[Hd._θind[:Md]] = θ[Hd._θind[:Md]]
     set_params(Hd.Md_inv, getindex(θ, Hd._θind[:Md]))
-    # set_params(Hd.Vd, getindex(θ, Hd._θind[:Vd]))
-    # for (k, Uk) in enumerate(Hd.J2)
-    #     set_params(Uk, getindex(θ, Hd._θind[Symbol("U",k)]))
-    # end
+    Hd.θ[Hd._θind[:Vd]] = θ[Hd._θind[:Vd]]
+    set_params(Hd.Vd, getindex(θ, Hd._θind[:Vd]))
+    for (k, Uk) in enumerate(Hd.J2)
+        Hd.θ[Hd._θind[Symbol("U",k)]] = θ[Hd._θind[Symbol("U",k)]]
+        set_params(Uk, getindex(θ, Hd._θind[Symbol("U",k)]))
+    end
 end
+
 
 function reset_Vd!(Hd::QuadraticEnergyFunction) 
     T = first(typeof(Hd).parameters)
@@ -117,45 +126,53 @@ function reset_Vd!(Hd::QuadraticEnergyFunction)
     nothing
 end
 
+
 ###############################################################################
 ###############################################################################
 
+
 function _get_input_jacobian(Hd::QuadraticEnergyFunction{T}, x) where {T<:Real}
-    Nq = Hd.dim_q
-    J = zeros(T, Nq*2, Nq)
-    @inbounds for i = 1:Nq
-        J[2*i-1, i] = -x[2*i]
-        J[2*i, i] = x[2*i-1]
+    if isempty(Hd.dim_S1) 
+        return LinearAlgebra.I
+    end
+    
+    nq = Hd.Md_inv.n
+    nin = first(Hd.Md_inv.net.widths)
+    J = zeros(T, nin, nq)
+    row = 1
+    for i = 1:nq
+        if i in Hd.dim_S1
+            J[row,i] = -x[row+1]
+            J[row+1,i] = x[row]
+            row += 2
+        else
+            J[row,i] = one(eltype(x))
+            row += 1
+        end
     end
     J
 end
+
+
 function _pe_gradient(Hd::QuadraticEnergyFunction{T}, q, θ=Hd.θ) where {T<:Real}
     θVd = @view θ[ Hd._θind[:Vd] ]
-    if Hd.dim_q == Hd.num_states/2
-        return gradient(Hd.Vd, q, θVd)
-    else
-        return gradient(Hd.Vd, q, θVd) * _get_input_jacobian(Hd, q)
-    end
+    return gradient(Hd.Vd, q, θVd) * _get_input_jacobian(Hd, q)
 end
+
+
 function _ke_gradient(Hd::QuadraticEnergyFunction{T}, q, p, θ=Hd.θ) where {T<:Real}
-    dim_q = Hd.dim_q
+    dim_q = Hd.Md_inv.n
     θMd = @view θ[ Hd._θind[:Md] ]
     ∇q_Mdinv = reduce(vcat, gradient(Hd.Md_inv, q, θMd))
-    if Hd.dim_q == Hd.num_states/2
-        gs = map(1:dim_q) do j
-            ∇q_Mdinv_j = reshape(∇q_Mdinv[:,j], dim_q, :)
-            ∇q_Mdinv_j * p[j]
-        end 
-        sum(gs)' * p
-    else
-        jac = _get_input_jacobian(Hd, q)
-        gs = map(1:dim_q) do j
-            ∇q_Mdinv_j = reshape(∇q_Mdinv[:,j], dim_q, :) * jac
-            ∇q_Mdinv_j * p[j]
-        end 
-        sum(gs)' * p
-    end
+    jac = _get_input_jacobian(Hd, q)
+    gs = map(1:dim_q) do j
+        ∇q_Mdinv_j = reshape(∇q_Mdinv[:,j], dim_q, :) * jac
+        ∇q_Mdinv_j * p[j]
+    end 
+    sum(gs)' * p
 end
+
+
 function gradient(Hd::QuadraticEnergyFunction{T}) where {T<:Real}
     """
     Returns ∇ₓHd(x, ẋ, θ), the gradient of Hd with respect to x
@@ -165,36 +182,43 @@ function gradient(Hd::QuadraticEnergyFunction{T}) where {T<:Real}
     end 
 end
 
+
 ###############################################################################
 ###############################################################################
 
+
 function pde_loss_Md(Hd::QuadraticEnergyFunction{T}, q, θ=Hd.θ) where {T<:Real}
-    dim_q = Hd.dim_q
+    dim_q = Hd.Md_inv.n
     Minv = inv(Hd.mass_matrix(q))
     θMd = @view θ[ Hd._θind[:Md] ]
-    Md = Hd.Md_inv(q, θMd) |> inv
+    Mdinv = Hd.Md_inv(q, θMd)
+    Md = inv(Mdinv)
     ∇q_Mdinv = reduce(vcat, gradient(Hd.Md_inv, q, θMd))
-    if Hd.dim_q == Hd.num_states/2 
-        jac = I
-    else
-        jac = _get_input_jacobian(Hd, q)
-    end
+    jac = _get_input_jacobian(Hd, q)
+    Gperp = Hd.input_matrix_perp
     map(1:dim_q) do j
+        ∇q_Minv_j = Hd.∂KE∂q(q,j)
         ∇q_Mdinv_j = reshape(∇q_Mdinv[:,j], dim_q, :) * jac
-        sum(abs2, Hd.input_matrix_perp * (Hd.∂KE∂q(q,j)' - Md*Minv*∇q_Mdinv_j'))
+        θUk = @view θ[ Hd._θind[Symbol("U", j)] ]
+        Uk = Hd.J2[j](q, θUk)
+        sum(abs2, Gperp * (∇q_Minv_j' - Md*Minv*∇q_Mdinv_j' + Uk*Mdinv))
     end |> sum
 end
+
+
 function pde_loss_Vd(Hd::QuadraticEnergyFunction{T}, q, θ=Hd.θ) where {T<:Real}
-    dim_q = Hd.dim_q
-    θMd = @view Hd.θ[ Hd._θind[:Md] ]
+    dim_q = Hd.Md_inv.n
+    θMd = @view θ[ Hd._θind[:Md] ]
     
     ∇q_Vd = _pe_gradient(Hd, q, θ)
     M = Hd.mass_matrix(q)
     Md_inv = Hd.Md_inv(q, θMd)
     return dot( Hd.input_matrix_perp, ( Hd.∂PE∂q(q) - (M*Md_inv)\vec(∇q_Vd) ) ) |> abs2
 end
+
+
 function mimic_quadratic_Vd(Hd::QuadraticEnergyFunction{T}, q, θ=Hd.θ) where {T<:Real}
-    n = Hd.dim_q
+    n = Hd.Md_inv.n
     qbar = reduce(vcat, [atan(q[2*i], q[2*i-1]) for i=1:n])
     if norm(qbar) < 0.2
         return zero(T)
@@ -209,6 +233,8 @@ function mimic_quadratic_Vd(Hd::QuadraticEnergyFunction{T}, q, θ=Hd.θ) where {
     P = L*L' + diagm(fill(T(0.1), n))   
     (dot(qbar, P*qbar) - Hd.Vd(q, θ[Hd._θind[:Vd]])[1]) |> abs
 end
+
+
 function train_Md!(Hd::QuadraticEnergyFunction{T}; max_iters=100, η=0.01, batchsize=80, step=0.1) where {T<:Real}
     
     # Generate data
@@ -230,7 +256,7 @@ function train_Md!(Hd::QuadraticEnergyFunction{T}; max_iters=100, η=0.01, batch
 
     # Print format
     fexpr = *(
-        "Epoch {1:$(ndigits(max_iters))d}/{2:d}  |  PDE loss = {3:.4E}  \n"
+        "Epoch {1:4d}  |  PDE loss = {2:.4E}  \n"
     )
 
     # Optimize
@@ -239,18 +265,19 @@ function train_Md!(Hd::QuadraticEnergyFunction{T}; max_iters=100, η=0.01, batch
         θVd = θ[Hd._θind[:Vd]]
         N = size(data, 1)
         +(
-            # map(x -> pde_loss_Md(Hd,x,θ), data) |> sum |> x -> /(x,N),
+            map(x -> pde_loss_Md(Hd,x,θ), data) |> sum |> x -> /(x,N),
             map(x -> pde_loss_Vd(Hd,x,θ), data) |> sum |> x -> /(x,N),
-            # Hd.Vd(q0,θVd)[1],
+            # abs2(Hd.Vd(q0,θVd)[1]),
             sum(abs2, gradient(Hd.Vd, q0, θVd)),
             # map(x -> -Hd.Vd(x,θVd)[1], data) |> sum, #x -> *(x,-one(x)),
             # map(x -> mimic_quadratic_Vd(Hd,x,θ), data) |> sum |> x -> *(x,T(0.001)),
         )
     end
-    params_to_train = [Hd.θ; rand(T, Int(Hd.dim_q*(Hd.dim_q+1)/2))]
-    for epoch in 1:max_iters
+    params_to_train = Hd.θ
+    epoch = 1
+    while epoch < max_iters
         current_loss = _loss(data)
-        printfmt(fexpr, epoch, max_iters, current_loss)
+        printfmt(fexpr, epoch, current_loss)
         sum(current_loss) <= 1e-5 && break
         batch = 1
         for x in dataloader
@@ -262,16 +289,19 @@ function train_Md!(Hd::QuadraticEnergyFunction{T}; max_iters=100, η=0.01, batch
                 set_params(Hd.Vd,     Hd.θ[Hd._θind[:Vd]])
                 batch += 1
             else
-                @warn "Training produced NaN. Stopping.."
-                return nothing
+                # @warn "Training produced NaN."
+                # return nothing
             end
         end
+        epoch += 1
     end
 
 end
 
+
 ###############################################################################
 ###############################################################################
+
 
 function controller(Hd::QuadraticEnergyFunction{T}) where {T<:Real}
     M = Hd.mass_matrix
@@ -288,6 +318,8 @@ function controller(Hd::QuadraticEnergyFunction{T}) where {T<:Real}
         return T(1)*dot( (G'*G)\G', Gu_es ) + u_di
     end
 end
+
+
 function predict(Hd::QuadraticEnergyFunction{T}, x0::Vector, θ::Vector=Hd.θ, tf=Hd.hyper.time_horizon) where {T<:Real}
     u = controller(Hd)
     x = Array( 

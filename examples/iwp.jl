@@ -64,11 +64,12 @@ function random_state(T::DataType)
 end
 
 
-NX = 6
-Hd = EnergyFunction(Float32, NX, dynamics!, loss, dim_S1=[1,2], num_hidden_nodes=32)
+NX=6
+dim_S1=[1,2]
+Hd = EnergyFunction(Float32, NX, dynamics!, loss, dim_S1=dim_S1, num_hidden_nodes=32)
 Hd_quad = QuadraticEnergyFunction(Float32,
     NX, dynamics, loss, ∂KE∂q, ∂PE∂q, mass_matrix, input_matrix, input_matrix_perp, 
-    dim_q=2, num_hidden_nodes=16, symmetric=!true
+    dim_S1=dim_S1, num_hidden_nodes=16, symmetric=!true
 )
 q = random_state(Float32)[1:4]
 p = rand(Float32, 2)

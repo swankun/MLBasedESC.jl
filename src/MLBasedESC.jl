@@ -2,7 +2,7 @@ module MLBasedESC
 
 using ReverseDiff
 using Flux: Chain, Dense, relu, glorot_uniform, ADAM, throttle, Data, Optimise
-using Zygote: bufferfrom, @nograd
+using Zygote
 
 using OrdinaryDiffEq
 using DiffEqFlux
