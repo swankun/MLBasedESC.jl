@@ -44,11 +44,11 @@ function QuadraticEnergyFunction(
     dim_q = (dim_input - length(dim_S1)) ÷ 2
     nin = length(dim_S1) + dim_q 
     Md_inv = PSDNeuralNetwork(T, dim_q, nin=nin, symmetric=symmetric)
-    Vd = NeuralNetwork(T, 
-        [nin, num_hidden_nodes, num_hidden_nodes, 1],
-        symmetric=symmetric
-    )
-    # Vd = SOSPoly(nin, 4)
+    # Vd = NeuralNetwork(T, 
+    #     [nin, num_hidden_nodes, num_hidden_nodes, 1],
+    #     symmetric=symmetric
+    # )
+    Vd = SOSPoly(nin, 4)
     J2 = [SkewSymNeuralNetwork(T, dim_q, nin=nin) for _=1:dim_q]
     θ = [ Md_inv.net.θ; Vd.θ; (Uk.net.θ for Uk in J2)...]
     _θind = Dict(
@@ -266,9 +266,9 @@ function train_Md!(Hd::QuadraticEnergyFunction{T}; max_iters=100, η=0.01, batch
         N = size(data, 1)
         +(
             map(x -> pde_loss_Md(Hd,x,θ), data) |> sum |> x -> /(x,N),
-            map(x -> pde_loss_Vd(Hd,x,θ), data) |> sum |> x -> /(x,N),
+            # map(x -> pde_loss_Vd(Hd,x,θ), data) |> sum |> x -> /(x,N),
             # abs2(Hd.Vd(q0,θVd)[1]),
-            sum(abs2, gradient(Hd.Vd, q0, θVd)),
+            # sum(abs2, gradient(Hd.Vd, q0, θVd)),
             # map(x -> -Hd.Vd(x,θVd)[1], data) |> sum, #x -> *(x,-one(x)),
             # map(x -> mimic_quadratic_Vd(Hd,x,θ), data) |> sum |> x -> *(x,T(0.001)),
         )
