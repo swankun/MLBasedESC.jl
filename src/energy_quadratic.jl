@@ -49,7 +49,7 @@ function QuadraticEnergyFunction(
     #     symmetric=symmetric
     # )
     Vd = SOSPoly(nin, 4)
-    J2 = [SkewSymNeuralNetwork(T, dim_q, nin=nin) for _=1:dim_q]
+    J2 = [SkewSymNeuralNetwork(T, dim_q, nin=nin, num_hidden_nodes=8) for _=1:dim_q]
     θ = [ Md_inv.net.θ; Vd.θ; (Uk.net.θ for Uk in J2)...]
     _θind = Dict(
         :Md => 1 : length(Md_inv.net.θ), 
@@ -208,7 +208,7 @@ end
 
 function pde_loss_Vd(Hd::QuadraticEnergyFunction{T}, q, θ=Hd.θ) where {T<:Real}
     dim_q = Hd.Md_inv.n
-    θMd = @view θ[ Hd._θind[:Md] ]
+    θMd = @view Hd.θ[ Hd._θind[:Md] ]
     
     ∇q_Vd = _pe_gradient(Hd, q, θ)
     M = Hd.mass_matrix(q)
@@ -312,9 +312,17 @@ function controller(Hd::QuadraticEnergyFunction{T}) where {T<:Real}
     u(x, θ=Hd.θ) = begin
         q = x[1:k]
         p = x[k+1:end]
+
         θMd = @view θ[ Hd._θind[:Md] ]
-        Gu_es = ∂H∂q(q, p) .- (M(q) * Hd.Md_inv(q,θMd)) \ ∇q_Hd(q, p, θ)
-        u_di = -T(1.0)*dot(G, T(2)*Hd.Md_inv(q,θMd)*p)
+        Mdi = Hd.Md_inv(q,θMd)
+        J2 = zeros(T, length(p), length(p))
+        for j = 1:length(p)
+            θUj = @view θ[ Hd._θind[Symbol("U", j)] ]
+            J2 .+= T(0.5)*Hd.J2[j](q, θUj)*p[j]
+        end
+
+        Gu_es = ∂H∂q(q, p) .- (M(q) * Mdi) \ ∇q_Hd(q, p, θ) .+ J2*Mdi*p
+        u_di = -T(1.0)*dot(G, T(2)*Mdi*p)
         return T(1)*dot( (G'*G)\G', Gu_es ) + u_di
     end
 end

@@ -1,8 +1,8 @@
 export SOSPoly, gradient, set_params, hessian
 
 mutable struct SOSPoly{VA, BA, CO<:AbstractVector{<:Real}}
-    dim::Integer
-    degree::Integer
+    dim::Int
+    degree::Int
     vars::VA
     mono::BA
     θ::CO
