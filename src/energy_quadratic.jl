@@ -239,10 +239,10 @@ function train_Md!(Hd::QuadraticEnergyFunction{T}; max_iters=100, η=0.01, batch
     
     # Generate data
     data = Vector{T}[]
-    qmax = pif0/2; 
+    qmax = pif0/4f0; 
     qmin = -qmax
-    q1range = range(-10f0, 10f0, length=31)
-    q2range = range(qmin, qmax, length=31)
+    q1range = range(-10f0, 10f0, length=25)
+    q2range = range(qmin, qmax, length=25)
     # q0 = T[cos(0); sin(0); cos(0); sin(0)]
     q0 = T[0, 0]
     for q1 in q1range
@@ -265,8 +265,8 @@ function train_Md!(Hd::QuadraticEnergyFunction{T}; max_iters=100, η=0.01, batch
         θVd = θ[Hd._θind[:Vd]]
         N = size(data, 1)
         +(
-            map(x -> pde_loss_Md(Hd,x,θ), data) |> sum |> x -> /(x,N),
-            # map(x -> pde_loss_Vd(Hd,x,θ), data) |> sum |> x -> /(x,N),
+            # map(x -> pde_loss_Md(Hd,x,θ), data) |> sum |> x -> /(x,N),
+            map(x -> pde_loss_Vd(Hd,x,θ), data) |> sum |> x -> /(x,N),
             # abs2(Hd.Vd(q0,θVd)[1]),
             # sum(abs2, gradient(Hd.Vd, q0, θVd)),
             # map(x -> -Hd.Vd(x,θVd)[1], data) |> sum, #x -> *(x,-one(x)),
@@ -309,27 +309,27 @@ function controller(Hd::QuadraticEnergyFunction{T}) where {T<:Real}
     ∇q_Hd = gradient(Hd)
     ∂H∂q(q, p) = T(1/2)*sum([Hd.∂KE∂q(q,k)*p[k] for k=1:2])'*p .+ Hd.∂PE∂q(q)
     k = first(Hd.Md_inv.net.widths)
+    kp = T(1)
     u(x, θ=Hd.θ) = begin
         q = x[1:k]
-        p = x[k+1:end]
+        p = x[k+1:end] .* diag(M(q))
 
         θMd = @view θ[ Hd._θind[:Md] ]
-        Mdi = Hd.Md_inv(q,θMd)
+        Mdi = (1/kp)*Hd.Md_inv(q,θMd)
         J2 = zeros(T, length(p), length(p))
         for j = 1:length(p)
             θUj = @view θ[ Hd._θind[Symbol("U", j)] ]
-            J2 .+= T(0.5)*Hd.J2[j](q, θUj)*p[j]
+            J2 .+= T(1/2)*Hd.J2[j](q, θUj)*p[j]
         end
 
-        Gu_es = ∂H∂q(q, p) .- (M(q) * Mdi) \ ∇q_Hd(q, p, θ) .+ J2*Mdi*p
-        u_di = -T(1.0)*dot(G, T(2)*Mdi*p)
+        Gu_es = ∂H∂q(q, p) .- T(1)*( (M(q) * Mdi) \ (∇q_Hd(q, p, θ) / kp) .+ kp*J2*Mdi*p )
+        u_di = -T(10)*dot(G, 2*kp*Mdi*p)
         return T(1)*dot( (G'*G)\G', Gu_es ) + u_di
     end
 end
 
 
-function predict(Hd::QuadraticEnergyFunction{T}, x0::Vector, θ::Vector=Hd.θ, tf=Hd.hyper.time_horizon) where {T<:Real}
-    u = controller(Hd)
+function predict(Hd::QuadraticEnergyFunction{T}, x0::Vector, θ::Vector=Hd.θ, tf=Hd.hyper.time_horizon; u=controller(Hd)) where {T<:Real}
     x = Array( 
         OrdinaryDiffEq.solve(
             ODEProblem(

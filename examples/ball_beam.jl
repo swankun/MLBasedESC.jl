@@ -3,6 +3,12 @@ using LinearAlgebra
 using Plots; pyplot()
 using ReverseDiff
 
+using MeshCat
+using CoordinateTransformations, Rotations
+using GeometryBasics: Sphere, Cylinder, HyperRectangle, Vec, Point3f0
+using Colors: RGBA, RGB
+using Blink
+
 function dynamics(x, u)
     q1, q2, q1dot, q2dot = x
     g = eltype(x)(9.81)
@@ -13,6 +19,7 @@ function dynamics(x, u)
     ẋ4 = ( u - 2f0*q1*q1dot*q2dot - g*q1*cos(q2) ) / ( L^2 + q1^2 )
     return [ẋ1, ẋ2, ẋ3, ẋ4]
 end
+
 function dynamics!(dx, x, u)
     q1, q2, q1dot, q2dot = x
     g = eltype(x)(9.81)
@@ -20,6 +27,7 @@ function dynamics!(dx, x, u)
     dx[1] = -g*sin(q2) + q1*q2dot^2
     dx[2] = ( u - eltype(x)(2)*q1*q1dot*q2dot - g*q1*cos(q2) ) / ( L^2 + q1^2 )
 end
+
 function loss(x)
     dist = eltype(x)(1)*x[1,:].^2 +
         eltype(x)(1)*x[2,:].^2 +
@@ -28,6 +36,7 @@ function loss(x)
     return eltype(x)(10)*minimum(map(sqrt, dist)) + sum(sqrt, dist)/length(x)
     # return sum(abs2, dist)
 end
+
 function ∂KE∂q(q,j)
     if j == 2
         return eltype(q)[0 0; -(10f0^2 + q[1]^2)^(-2)*2*q[1] 0]
@@ -35,18 +44,45 @@ function ∂KE∂q(q,j)
         return zeros(eltype(q),(2,2))
     end
 end
+
 function ∂PE∂q(q)
     g = eltype(q)(9.81)
     return g*[ sin(q[2]); q[1]*cos(q[2]) ]
 end
+
 ∂H∂q(q,p) = eltype(q)(1/2)*sum([∂KE∂q(q,k)*p[k] for k=1:2])'*p .+ ∂PE∂q(q)
+
 function mass_matrix(q)
     return diagm(eltype(q)[1; 10f0^2 + q[1]^2])
 end
+
 const input_matrix = Float32[0; 1]
 const input_matrix_perp = Float32[1 0]
+
+function true_control(x,θ)
+    M  = mass_matrix
+    G  = input_matrix
+    L  = 10f0
+    g  = 9.81f0
+    kp = 1f0
+    kv = 50f0
+
+    Mdi(q)  = (L^2 + q[1]^2) * [sqrt(2f0/(L^2+q[1]^2)) 1f0; 1f0 sqrt(2f0*(L^2+q[1]^2))] |> inv
+    Vd(q)   = g*(1f0-cos(q[2])) + 0.5f0*kp*( q[2] - 1f0/sqrt(2)*asinh(q[1]/L) )^2
+    Hd(q,p) = 0.5f0 * dot(p, Mdi(q)*p) + Vd(q)
+    ∇q_Hd(q,p) = ReverseDiff.gradient(x->Hd(x,p), q)
+
+    q = x[1:2]
+    p = x[3:end] .* diag(M(q))
+    j   = q[1]*(p[1] - sqrt(2f0/(L^2+q[1]^2))*p[2])
+    J2  = [0f0 j; -j 0f0]
+    Gu_es = ∂H∂q(q, p) .- (M(q) * Mdi(q)) \ ∇q_Hd(q, p) .+ J2*Mdi(q)*p
+    u_di = -kv*dot(G, 2f0*Mdi(q)*p)
+    return dot( (G'*G)\G', Gu_es ) + u_di
+end
+
 function random_state(T::DataType)
-    q1 = T(π/6)*T(2)*(rand(T) - T(0.5))
+    q1 = T(5)*T(2)*(rand(T) - T(0.5))
     q2 = T(π/6)*T(2)*(rand(T) - T(0.5))
     vcat(
         q1,
@@ -93,6 +129,7 @@ function plot_traj(Hd; x0=Float32[8,0,1,1], tf=Hd_quad.hyper.time_horizon)
     Hd_quad.hyper.time_horizon = typeof(old_tf)(tf)
     Hd_quad.hyper.step_size = typeof(old_tf)(tf/num_plot_samples)
     t = range(0, Hd_quad.hyper.time_horizon, step=Hd_quad.hyper.step_size)
+    # x = predict(Hd_quad, x0, u=true_control)
     x = predict(Hd_quad, x0)
     Hd_quad.hyper.time_horizon = old_tf 
     Hd_quad.hyper.step_size = old_dt
@@ -102,7 +139,7 @@ function plot_traj(Hd; x0=Float32[8,0,1,1], tf=Hd_quad.hyper.time_horizon)
         plot(t,x[3,:], label="q1dot"),
         plot(t,x[4,:], label="q2dot"),
         plot(t,x[5,:], label="u"),
-        dpi=100, layout=(5,1)
+        dpi=100, layout=(5,1), show=true, reuse=false
     )
 end
 
@@ -112,4 +149,49 @@ true_Vd(q, kp=1f0) = begin
     a = g*(1-cos(q[2]))
     b = kp/2 * (q[2] - 1/sqrt(2)*asinh(q[1]/L))^2
     return a + b
+end
+
+
+function animate(x, vis)
+    q1, q2, p1, p2, u = eachrow(x)
+    L = eltype(x)(10)
+    red_material = MeshPhongMaterial(color=RGBA(252/255, 206/255, 0.0, 0.7))
+    green_material = MeshPhongMaterial(color=RGBA(255/255, 124/255, 59/255, 1.0))
+    beam_radius = 0.025f0
+    ball_radius = 0.125f0
+
+    trans = Translation(6, 0, 0)
+    rot = LinearMap(RotY(deg2rad(5)))
+    composed = trans ∘ rot
+    settransform!(vis["/Cameras/default"], composed)
+    
+    beam = HyperRectangle(Vec(-L/10,-L/2,-beam_radius/2), Vec(L/5,L,beam_radius))#Cylinder(Point3f0(0,-L/2,0), Point3f0(0,L/2,0), beam_radius)
+    ball = Sphere(Point3f0(0,0,beam_radius/2+ball_radius), ball_radius)
+
+    delete!(vis)
+    setobject!(vis["links"]["beam"], beam, red_material)
+    setobject!(vis["links"]["ball"], ball, green_material)
+    
+    ball_pos(q1, q2) = Float32[0, q1*cos(q2), q1*sin(q2)]
+    settransform!(vis["links"]["beam"], 
+        LinearMap(AngleAxis(q2[1], 1, 0, 0))
+    )
+    settransform!(vis["links"]["ball"], 
+        Translation(ball_pos(q1[1], q2[1]))
+    )
+    
+    anim = MeshCat.Animation()
+    step = max(1, round(Int, 1/20/Hd_quad.hyper.step_size))
+    for (frame, i) in enumerate(1:step:length(q1))
+        atframe(anim, frame-1) do
+            settransform!(vis["links"]["beam"], 
+                LinearMap(AngleAxis(q2[i], 1, 0, 0))
+            )
+            settransform!(vis["links"]["ball"], 
+                Translation(ball_pos(q1[i], q2[i]))
+            )
+        end
+    end
+    setanimation!(vis, anim) 
+
 end
