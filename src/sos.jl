@@ -55,33 +55,77 @@ mutable struct SymmetricSOSPoly{VA, BA, CO} <: AbstractSOSPoly
 end
 
 function SymmetricSOSPoly(n::Int, degree::Int)
-    # Currently only works for 2 dimension, 4th degree poly 
     @polyvar q[1:2]
-    mono = monomials(q, 1:2) |> reverse
-    mono = mono[[2,1,5,4,3]]
+    
+    # deg=4
+    # mono = monomials(q, 1:2) |> reverse
+    # mono = mono[[2,1,5,4,3]]
+    # m = length(mono)
+    # θ = glorot_uniform(9)
+
+    # deg=8
+    mono = monomials(q, 1:4)
+    mono = reduce(vcat, [getindex(mono, i) for i in [13:14, 10:12, 6:9, 1:5]])
     m = length(mono)
-    θ = glorot_uniform(9)
+    θ = glorot_uniform(34)
+
     SymmetricSOSPoly{typeof(q), typeof(mono), typeof(θ)}(n, degree, q, mono, θ)
+end
+
+function coeff_matrix(θ=1:34)
+    T = eltype(θ)
+    partlen = cumsum(2:5) .+ 1
+    start = [1; partlen[1:end-1]] |> cumsum
+    idx = [range(a, step=1, length=b) for (a,b) in zip(start, partlen)]
+    A,B,C,D = [vec2tril(θ[i]) for i in idx]
+    L = [
+        A zeros(T,(2,3+4+5))
+        zeros(T,(3,2)) B zeros(T,(3,4+5))
+        zeros(T,(4,2+3)) C zeros(T,(4,5))
+        zeros(T,(5,2+3+4)) D
+    ]
 end
 
 function (P::SymmetricSOSPoly)(x, θ=P.θ)
     T = eltype(x)
-    L = [
-        vec2tril(θ[1:3]) zeros(T,2,3)
-        zeros(T,3,2) vec2tril(θ[4:end])
-    ]
+
+    # deg=4
+    # L = [
+    #     vec2tril(θ[1:3]) zeros(T,2,3)
+    #     zeros(T,3,2) vec2tril(θ[4:end])
+    # ]
+
+    # deg=8
+    L = coeff_matrix(θ)
+
     X = P.mono
-    sos = dot(X, (L*L')*X)(P.vars=>x)
+    sos = dot(X, (L'*L)*X)(P.vars=>x)
 end
 
 function gradient(P::SymmetricSOSPoly, x, θ=P.θ) 
     T = eltype(x)
-    L = [
-        vec2tril(θ[1:3]) zeros(T,2,3)
-        zeros(T,3,2) vec2tril(θ[4:end])
-    ]
+
+    # deg=4
+    # L = [
+    #     vec2tril(θ[1:3]) zeros(T,2,3)
+    #     zeros(T,3,2) vec2tril(θ[4:end])
+    # ]
+
+    # deg=8
+    L = coeff_matrix(θ)
+
     X = P.mono
-    sos = dot(X, (L*L')*X)
+    sos = dot(X, (L'*L)*X)
     expr = differentiate.(sos, P.vars)
     val = reduce(hcat, p(P.vars=>x) for p in expr)
+end
+
+function test_symmetry(P::SymmetricSOSPoly)
+    val = randn(Float32,2)
+    P(val) == P(-val)
+end
+
+function test_gradient(P::SymmetricSOSPoly)
+    val = randn(Float32,2)
+    ReverseDiff.gradient(P,val) ≈ gradient(P,val)[:]
 end
