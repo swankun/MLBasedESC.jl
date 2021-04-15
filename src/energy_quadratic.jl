@@ -266,8 +266,8 @@ function train_Md!(Hd::QuadraticEnergyFunction{T}; max_iters=100, η=0.01, batch
         θVd = θ[Hd._θind[:Vd]]
         N = size(data, 1)
         +(
-            # map(x -> pde_loss_Md(Hd,x,θ), data) |> sum |> x -> /(x,N),
-            map(x -> pde_loss_Vd(Hd,x,θ), data) |> sum |> x -> /(x,N),
+            map(x -> pde_loss_Md(Hd,x,θ), data) |> sum |> x -> /(x,N),
+            # map(x -> pde_loss_Vd(Hd,x,θ), data) |> sum |> x -> /(x,N),
             # abs2(Hd.Vd(q0,θVd)[1]),
             # sum(abs2, gradient(Hd.Vd, q0, θVd)),
             # map(x -> -Hd.Vd(x,θVd)[1], data) |> sum, #x -> *(x,-one(x)),

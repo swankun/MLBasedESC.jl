@@ -139,7 +139,7 @@ function plot_traj(Hd; x0=Float32[8,0,1,1], tf=Hd_quad.hyper.time_horizon)
         plot(t,x[3,:], label="q1dot"),
         plot(t,x[4,:], label="q2dot"),
         plot(t,x[5,:], label="u"),
-        dpi=100, layout=(5,1), show=true, reuse=false
+        dpi=100, layout=(5,1), show=true
     )
 end
 
