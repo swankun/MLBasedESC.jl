@@ -21,13 +21,15 @@ end
 function (P::SOSPoly)(x, θ=P.θ) 
     L = vec2tril(θ)
     X = P.mono
-    sos = dot(X, (L*L')*X)(P.vars=>x)
+    v = L'*X
+    sos = dot(v, v)(P.vars=>x)
 end
 
 function gradient(P::SOSPoly, x, θ=P.θ)
     L = vec2tril(θ)
     X = P.mono
-    sos = dot(X, (L*L')*X)
+    v = L'*X
+    sos = dot(v, v)
     expr = differentiate.(sos, P.vars)
     val = reduce(hcat, p(P.vars=>x) for p in expr)
 end
@@ -35,7 +37,8 @@ end
 function hessian(P::SOSPoly, x, θ=P.θ)
     L = vec2tril(θ)
     X = P.mono
-    sos = dot(X, (L*L')*X)
+    v = L'*X
+    sos = dot(v, v)
     gs = differentiate.(sos, P.vars)
     expr = [differentiate.(g, P.vars) for g in gs]
     val = [v(P.vars=>x) for v in reduce(hcat, expr)]    
@@ -84,14 +87,16 @@ function (P::SymmetricSOSPoly)(x, θ=P.θ)
     T = eltype(x)
     L = coeff_matrix(P, θ)
     X = P.mono
-    sos = dot(X, (L*L')*X)(P.vars=>x)
+    v = L'*X
+    sos = dot(v, v)(P.vars=>x)
 end
 
 function gradient(P::SymmetricSOSPoly, x, θ=P.θ) 
     T = eltype(x)
     L = coeff_matrix(P, θ)
     X = P.mono
-    sos = dot(X, (L*L')*X)
+    v = L'*X
+    sos = dot(v, v)
     expr = differentiate(sos, P.vars)
     val = reduce(hcat, p(P.vars=>x) for p in expr)
 end

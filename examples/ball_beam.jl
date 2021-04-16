@@ -97,13 +97,13 @@ NX = 4
 dim_S1 = [2]
 Hd_quad = QuadraticEnergyFunction(Float32,
     4, dynamics, loss, ∂KE∂q, ∂PE∂q, mass_matrix, input_matrix, input_matrix_perp, 
-    num_hidden_nodes=16, symmetric=!true
+    num_hidden_nodes=16, symmetric=true
 )
 x0 = Float32[4,0,1,1]
 
 surf_Vd(type=:surface; n=20, kwargs...) = begin
     Q1 = range(-10, 10, length=n)
-    Q2 = range(-pi/4, pi/4, length=n)
+    Q2 = range(-0.6, 0.6, length=n)
     plot(
         Q1, Q2,
         (x,y) -> Hd_quad.Vd( Float32[x; y] )[1],
@@ -114,7 +114,7 @@ end
 
 surf_Md(type=:surface; n=20, kwargs...) = begin
     Q1 = range(-10, 10, length=n)
-    Q2 = range(-pi/4, pi/4, length=n)
+    Q2 = range(-0.6, 0.6, length=n)
     plot(
         Q1, Q2,
         (x,y) -> cond( inv(Hd_quad.Md_inv( Float32[x; y] )) ),
