@@ -68,6 +68,7 @@ function true_control(x,θ)
     kv = 50f0
 
     Mdi(q)  = (L^2 + q[1]^2) * [sqrt(2f0/(L^2+q[1]^2)) 1f0; 1f0 sqrt(2f0*(L^2+q[1]^2))] |> inv
+    # Mdi(q) = Hd_quad.Md_inv(q)
     Vd(q)   = g*(1f0-cos(q[2])) + 0.5f0*kp*( q[2] - 1f0/sqrt(2)*asinh(q[1]/L) )^2
     Hd(q,p) = 0.5f0 * dot(p, Mdi(q)*p) + Vd(q)
     ∇q_Hd(q,p) = ReverseDiff.gradient(x->Hd(x,p), q)

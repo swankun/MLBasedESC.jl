@@ -218,6 +218,19 @@ function pde_loss_Vd(Hd::QuadraticEnergyFunction{T}, q, θ=Hd.θ) where {T<:Real
 end
 
 
+function symmetry_loss(Hd::QuadraticEnergyFunction{T}, q, θ=Hd.θ) where {T<:Real}
+    dim_q = Hd.Md_inv.n
+    θMd = @view θ[ Hd._θind[:Md] ]
+    +(
+        norm(inv(Hd.Md_inv(q, θMd)) - inv(Hd.Md_inv(-q, θMd))),
+        map(1:dim_q) do j
+            θUk = @view θ[ Hd._θind[Symbol("U", j)] ]
+            norm(Hd.J2[j](q, θUk) + Hd.J2[j](-q, θUk))
+        end |> sum
+    )
+end
+
+
 function mimic_quadratic_Vd(Hd::QuadraticEnergyFunction{T}, q, θ=Hd.θ) where {T<:Real}
     n = Hd.Md_inv.n
     qbar = reduce(vcat, [atan(q[2*i], q[2*i-1]) for i=1:n])
@@ -240,10 +253,10 @@ function train_Md!(Hd::QuadraticEnergyFunction{T}; max_iters=100, η=0.01, batch
     
     # Generate data
     data = Vector{T}[]
-    qmax = pif0/4f0; 
+    qmax = 1f0;
     qmin = -qmax
-    q1range = range(-10f0, 10f0, length=25)
-    q2range = range(qmin, qmax, length=25)
+    q1range = range(-12f0, 12f0, step=step)
+    q2range = range(qmin, qmax, step=step)
     # q0 = T[cos(0); sin(0); cos(0); sin(0)]
     q0 = T[0, 0]
     for q1 in q1range
@@ -266,12 +279,13 @@ function train_Md!(Hd::QuadraticEnergyFunction{T}; max_iters=100, η=0.01, batch
         θVd = θ[Hd._θind[:Vd]]
         N = size(data, 1)
         +(
-            map(x -> pde_loss_Md(Hd,x,θ), data) |> sum |> x -> /(x,N),
-            # map(x -> pde_loss_Vd(Hd,x,θ), data) |> sum |> x -> /(x,N),
+            # map(x -> pde_loss_Md(Hd,x,θ), data) |> sum |> x -> /(x,N),
+            map(x -> pde_loss_Vd(Hd,x,θ), data) |> sum |> x -> /(x,N),
             # abs2(Hd.Vd(q0,θVd)[1]),
             # sum(abs2, gradient(Hd.Vd, q0, θVd)),
             # map(x -> -Hd.Vd(x,θVd)[1], data) |> sum, #x -> *(x,-one(x)),
             # map(x -> mimic_quadratic_Vd(Hd,x,θ), data) |> sum |> x -> *(x,T(0.001)),
+            # map(x -> symmetry_loss(Hd,x,θ), data) |> sum |> x -> /(x,N),
         )
     end
     params_to_train = Hd.θ
@@ -285,9 +299,10 @@ function train_Md!(Hd::QuadraticEnergyFunction{T}; max_iters=100, η=0.01, batch
             gs = ReverseDiff.gradient(θ -> sum(_loss(x, θ)), params_to_train)
             if !any(isnan.(gs))
                 Optimise.update!(opt, params_to_train, gs)
-                Hd.θ = params_to_train[1:length(Hd.θ)]
-                set_params(Hd.Md_inv, Hd.θ[Hd._θind[:Md]])
-                set_params(Hd.Vd,     Hd.θ[Hd._θind[:Vd]])
+                set_params(Hd, -params_to_train[1:length(Hd.θ)])
+                # Hd.θ = params_to_train[1:length(Hd.θ)]
+                # set_params(Hd.Md_inv, Hd.θ[Hd._θind[:Md]])
+                # set_params(Hd.Vd,     Hd.θ[Hd._θind[:Vd]])
                 batch += 1
             else
                 # @warn "Training produced NaN."
@@ -345,5 +360,5 @@ function predict(Hd::QuadraticEnergyFunction{T}, x0::Vector, θ::Vector=Hd.θ, t
             saveat=Hd.hyper.step_size
         )
     )
-    [x; mapslices(u, x, dims=1)]
+    [x; mapslices(x->u(x,θ), x, dims=1)]
 end
