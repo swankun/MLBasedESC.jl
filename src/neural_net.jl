@@ -232,6 +232,7 @@ function gradient(S::SkewSymNeuralNetwork, x, θ=S.net.θ)
     Returns Array{Matrix{T}} with 'nin' elements, and the ith matrix is
     the gradient of output w.r.t. the ith input
     """
-    ∂L∂x = eltype(x)(0.5) * ( [ vec2tril(col, true) for col in eachcol(gradient(S.net, x, θ)) ] .- [ vec2tril(col, true) for col in eachcol(gradient(S.net, -x, θ)) ] )
+    l = ( gradient(S.net, x, θ) + gradient(S.net, -x, θ) ) / 2
+    ∂L∂x = [ vec2tril(col, true) for col in eachcol(l) ]
     return [ dL - dL' for dL in ∂L∂x ]
 end
