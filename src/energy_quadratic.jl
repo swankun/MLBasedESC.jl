@@ -221,13 +221,13 @@ end
 function symmetry_loss(Hd::QuadraticEnergyFunction{T}, q, θ=Hd.θ) where {T<:Real}
     dim_q = Hd.Md_inv.n
     θMd = @view θ[ Hd._θind[:Md] ]
-    +(
-        norm(inv(Hd.Md_inv(q, θMd)) - inv(Hd.Md_inv(-q, θMd))),
+    # +(
+        # norm(inv(Hd.Md_inv(q, θMd)) - inv(Hd.Md_inv(-q, θMd))),
         map(1:dim_q) do j
             θUk = @view θ[ Hd._θind[Symbol("U", j)] ]
             norm(Hd.J2[j](q, θUk) + Hd.J2[j](-q, θUk))
         end |> sum
-    )
+    # )
 end
 
 
@@ -299,7 +299,7 @@ function train_Md!(Hd::QuadraticEnergyFunction{T}; max_iters=100, η=0.01, batch
             gs = ReverseDiff.gradient(θ -> sum(_loss(x, θ)), params_to_train)
             if !any(isnan.(gs))
                 Optimise.update!(opt, params_to_train, gs)
-                set_params(Hd, -params_to_train[1:length(Hd.θ)])
+                set_params(Hd, params_to_train[1:length(Hd.θ)])
                 # Hd.θ = params_to_train[1:length(Hd.θ)]
                 # set_params(Hd.Md_inv, Hd.θ[Hd._θind[:Md]])
                 # set_params(Hd.Vd,     Hd.θ[Hd._θind[:Vd]])
@@ -340,7 +340,7 @@ function controller(Hd::QuadraticEnergyFunction{T}) where {T<:Real}
 
         Gu_es = ∂H∂q(q, p) .- T(1)*( (M(q) * Mdi) \ (∇q_Hd(q, p, θ) / kp) .+ kp*J2*Mdi*p )
         u_di = -T(10)*dot(G, 2*kp*Mdi*p)
-        return T(1)*dot( (G'*G)\G', Gu_es ) + u_di
+        return T(1.5)*dot( (G'*G)\G', Gu_es ) + u_di
     end
 end
 
@@ -354,11 +354,47 @@ function predict(Hd::QuadraticEnergyFunction{T}, x0::Vector, θ::Vector=Hd.θ, t
                 (0f0, tf), 
                 θ
             ), 
-            Tsit5(), abstol=1e-4, reltol=1e-4,  
+            Tsit5(), abstol=1e-6, reltol=1e-6,  
             u0=x0, 
             p=θ, 
             saveat=Hd.hyper.step_size
         )
     )
     [x; mapslices(x->u(x,θ), x, dims=1)]
+end
+
+###############################################################################
+###############################################################################
+
+test_Hd_gradient(Hd::QuadraticEnergyFunction) = begin
+    nx = Hd.dim_input
+    nq = first(Hd.Md_inv.net.widths)
+    np = nx - nq
+    q = randn(Float32, nq)
+    p = randn(Float32, np)
+    hcat(
+        ReverseDiff.gradient(x->Hd(x, p), q),
+        gradient(Hd)(q, p)
+    )
+end
+
+test_ke_gradient(Hd::QuadraticEnergyFunction) = begin
+    nx = Hd.dim_input
+    nq = first(Hd.Md_inv.net.widths)
+    np = nx - nq
+    q = randn(Float32, nq)
+    p = randn(Float32, np)
+    hcat(
+        ReverseDiff.gradient(x->p'*Hd.Md_inv(x)*p, q),
+        MLBasedESC._ke_gradient(Hd, q, p)
+    )
+end
+
+test_pe_gradient(Hd::QuadraticEnergyFunction) = begin
+    nq = first(Hd.Md_inv.net.widths)
+    q = randn(Float32, nq)
+    hcat(
+        ReverseDiff.gradient(Hd.Vd, q),
+        MLBasedESC._pe_gradient(Hd, q) |> vec
+    )
 end
