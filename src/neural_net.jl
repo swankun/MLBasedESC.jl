@@ -207,12 +207,13 @@ function SkewSymNeuralNetwork( T::Type,
         fill(num_hidden_nodes, depth-1)..., 
         Int(n*(n-1)/2)
     )
-    net = NeuralNetwork(T, widths, σ, σ′, symmetric=symmetric)
+    net = NeuralNetwork(T, widths, σ, σ′)
     SkewSymNeuralNetwork{typeof(net)}(n, net)
 end
 
 function (S::SkewSymNeuralNetwork)(x, p=S.net.θ)
-    L = vec2tril(S.net.chain(x, p), true)
+    l = (S.net.chain(x, p) - S.net.chain(-x, p)) / 2
+    L = vec2tril(l, true)
     return L - L'
 end
 
@@ -231,7 +232,6 @@ function gradient(S::SkewSymNeuralNetwork, x, θ=S.net.θ)
     Returns Array{Matrix{T}} with 'nin' elements, and the ith matrix is
     the gradient of output w.r.t. the ith input
     """
-    L = vec2tril(S.net.chain(x, θ), true)
-    ∂L∂x = [ vec2tril(col, true) for col in eachcol(gradient(S.net, x, θ)) ]
+    ∂L∂x = eltype(x)(0.5) * ( [ vec2tril(col, true) for col in eachcol(gradient(S.net, x, θ)) ] .- [ vec2tril(col, true) for col in eachcol(gradient(S.net, -x, θ)) ] )
     return [ dL - dL' for dL in ∂L∂x ]
 end

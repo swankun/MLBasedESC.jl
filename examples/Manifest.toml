@@ -797,7 +797,7 @@ uuid = "856f044c-d86e-5d09-b602-aeab76dc8ba7"
 version = "2021.1.1+1"
 
 [[MLBasedESC]]
-deps = ["DiffEqFlux", "DiffEqSensitivity", "DynamicPolynomials", "Flux", "Formatting", "GalacticOptim", "LinearAlgebra", "MultivariatePolynomials", "Optim", "OrdinaryDiffEq", "Printf", "Random", "ReverseDiff", "Revise", "Zygote"]
+deps = ["DiffEqFlux", "DiffEqSensitivity", "DynamicPolynomials", "Flux", "Formatting", "GalacticOptim", "LinearAlgebra", "MultivariatePolynomials", "Optim", "OrdinaryDiffEq", "Printf", "Random", "ReverseDiff", "Revise", "SparseArrays", "Zygote"]
 path = "/home/wankunsirichotiyakul/.julia/dev/MLBasedESC"
 uuid = "0d2b134a-22b1-4965-bb14-6de4eebc6429"
 version = "0.1.0"

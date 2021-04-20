@@ -97,7 +97,7 @@ NX = 4
 dim_S1 = [2]
 Hd_quad = QuadraticEnergyFunction(Float32,
     4, dynamics, loss, ∂KE∂q, ∂PE∂q, mass_matrix, input_matrix, input_matrix_perp, 
-    num_hidden_nodes=16, symmetric=!true
+    num_hidden_nodes=16, symmetric=true
 )
 x0 = Float32[4,0,1,1]
 
