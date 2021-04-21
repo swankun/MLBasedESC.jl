@@ -9,6 +9,14 @@ using GeometryBasics: Sphere, Cylinder, HyperRectangle, Vec, Point3f0
 using Colors: RGBA, RGB
 using Blink
 
+function mass_matrix(q)
+    return diagm(eltype(q)[1; 10f0^2 + q[1]^2])
+end
+
+function ham(q,p)
+    eltype(q)(1/2)*dot(p, inv(mass_matrix(q))*p) + eltype(q)(9.81)*sin(q[2])*q[1]
+end
+
 function dynamics(x, u)
     q1, q2, q1dot, q2dot = x
     g = eltype(x)(9.81)
@@ -52,9 +60,6 @@ end
 
 ∂H∂q(q,p) = eltype(q)(1/2)*sum([∂KE∂q(q,k)*p[k] for k=1:2])'*p .+ ∂PE∂q(q)
 
-function mass_matrix(q)
-    return diagm(eltype(q)[1; 10f0^2 + q[1]^2])
-end
 
 const input_matrix = Float32[0; 1]
 const input_matrix_perp = Float32[1 0]
@@ -195,4 +200,23 @@ function animate(x, vis)
     end
     setanimation!(vis, anim) 
 
+end
+
+function lsq_Vd()
+    Vd = SymmetricSOSPoly(2, 4)
+    mon = Vd.mono
+    vars = Vd.vars
+    dmon = MLBasedESC.differentiate(mon, vars)
+    
+    @variables θ[1:9]
+    @variables q[1:2]
+    L = MLBasedESC.coeff_matrix(Vd, θ)
+    R = L + L'
+    R = R - Diagonal(diag(R) / 2)
+    X = reduce(vcat, m(q[1], q[2]) for m in mon)
+    dX = reshape(reduce(vcat, m(q[1], q[2]) for m in dmon), (size(L,1), 2))
+    sos = transpose(dX)*R*X
+    A = Symbolics.jacobian(sos, θ)
+    
+    # Symbolics.islinear(sos, θ)
 end
