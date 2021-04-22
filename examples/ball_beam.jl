@@ -2,6 +2,7 @@ using MLBasedESC
 using LinearAlgebra
 using Plots; pyplot()
 using ReverseDiff
+using Symbolics
 
 using MeshCat
 using CoordinateTransformations, Rotations
@@ -217,6 +218,6 @@ function lsq_Vd()
     dX = reshape(reduce(vcat, m(q[1], q[2]) for m in dmon), (size(L,1), 2))
     sos = transpose(dX)*R*X
     A = Symbolics.jacobian(sos, θ)
-    
+
     # Symbolics.islinear(sos, θ)
 end
