@@ -204,20 +204,43 @@ function animate(x, vis)
 end
 
 function lsq_Vd()
-    Vd = SymmetricSOSPoly(2, 4)
+    Vd = Hd_quad.Vd # SymmetricSOSPoly(2, 4)
     mon = Vd.mono
     vars = Vd.vars
     dmon = MLBasedESC.differentiate(mon, vars)
     
-    @variables θ[1:9]
+    @variables θ[1:length(Vd.θ)]
     @variables q[1:2]
     L = MLBasedESC.coeff_matrix(Vd, θ)
+    L*L'
     R = L + L'
     R = R - Diagonal(diag(R) / 2)
     X = reduce(vcat, m(q[1], q[2]) for m in mon)
     dX = reshape(reduce(vcat, m(q[1], q[2]) for m in dmon), (size(L,1), 2))
     sos = transpose(dX)*R*X
-    A = Symbolics.jacobian(sos, θ)
+    J = Symbolics.jacobian(sos, θ)
+    Jf = build_function(J, q, expression=Val{false})[1]
+    
+    # Generate data
+    T = Float32
+    data = Vector{T}[]
+    qmax = 1f0;
+    qmin = -qmax
+    q1range = range(0f0, 10f0, length=101)
+    q2range = range(0f0, qmax, length=101)
+    for q1 in q1range
+        for q2 in q2range
+            push!(data, [q1; q2])
+        end
+    end
+    A = Matrix{T}(undef, 2*length(data), length(θ))
+    B = Vector{T}(undef, 2*length(data))
+    for (i,point) in enumerate(data)
+        A[2*i-1:2*i, :] = 2 * inv( mass_matrix(point) * Hd_quad.Md_inv(point) ) * Jf(point)
+        B[2*i-1:2*i] = ∂PE∂q(point)
+    end
 
-    # Symbolics.islinear(sos, θ)
+    res = A \ B
+    V = substitute.(R, (Dict(x => r for (x,r) in zip(θ,res)),))
+    res, T.(Symbolics.value.(V))
 end
