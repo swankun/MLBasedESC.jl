@@ -25,8 +25,12 @@ function (P::SOSPoly)(x, θ=P.θ)
     sos = dot(v, v)(P.vars=>x)
 end
 
+function coeff_matrix(P::SOSPoly, θ)
+    return vec2tril(θ)
+end
+
 function gradient(P::SOSPoly, x, θ=P.θ)
-    L = vec2tril(θ)
+    L = coeff_matrix(P, θ)
     X = P.mono
     v = L'*X
     sos = dot(v, v)
@@ -35,7 +39,7 @@ function gradient(P::SOSPoly, x, θ=P.θ)
 end
 
 function hessian(P::SOSPoly, x, θ=P.θ)
-    L = vec2tril(θ)
+    L = coeff_matrix(P, θ)
     X = P.mono
     v = L'*X
     sos = dot(v, v)

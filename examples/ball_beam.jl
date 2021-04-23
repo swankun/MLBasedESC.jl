@@ -1,6 +1,6 @@
 using MLBasedESC
 using LinearAlgebra
-using Plots; pyplot()
+using Plots; pyplot(size=(1268,734))
 using ReverseDiff
 using Symbolics
 
@@ -204,7 +204,9 @@ function animate(x, vis)
 end
 
 function lsq_Vd()
-    Vd = Hd_quad.Vd # SymmetricSOSPoly(2, 4)
+    Vd = Hd_quad.Vd
+    # Vd = SymmetricSOSPoly(2, 4)
+    # Vd = SOSPoly(2,2)
     mon = Vd.mono
     vars = Vd.vars
     dmon = MLBasedESC.differentiate(mon, vars)
@@ -212,7 +214,6 @@ function lsq_Vd()
     @variables θ[1:length(Vd.θ)]
     @variables q[1:2]
     L = MLBasedESC.coeff_matrix(Vd, θ)
-    L*L'
     R = L + L'
     R = R - Diagonal(diag(R) / 2)
     X = reduce(vcat, m(q[1], q[2]) for m in mon)
@@ -226,21 +227,53 @@ function lsq_Vd()
     data = Vector{T}[]
     qmax = 1f0;
     qmin = -qmax
-    q1range = range(0f0, 10f0, length=101)
-    q2range = range(0f0, qmax, length=101)
+    q1range = range(-10f0, 10f0, length=201)
+    q2range = range(qmin, qmax, length=21)
     for q1 in q1range
         for q2 in q2range
             push!(data, [q1; q2])
         end
     end
-    A = Matrix{T}(undef, 2*length(data), length(θ))
-    B = Vector{T}(undef, 2*length(data))
+    A = Matrix{T}(undef, length(data), length(θ))
+    B = Vector{T}(undef, length(data))
     for (i,point) in enumerate(data)
-        A[2*i-1:2*i, :] = 2 * inv( mass_matrix(point) * Hd_quad.Md_inv(point) ) * Jf(point)
-        B[2*i-1:2*i] = ∂PE∂q(point)
+        A[i, :] = [1 0]*( 2 * inv( mass_matrix(point) * Hd_quad.Md_inv(point) ) * Jf(point) )
+        B[i] = ([1 0]*∂PE∂q(point))[1]
     end
+    A, B
+    # res = A \ B
+    # V = substitute.(R, (Dict(x => r for (x,r) in zip(θ,res)),))
+    # res, T.(Symbolics.value.(V))
+end
 
-    res = A \ B
-    V = substitute.(R, (Dict(x => r for (x,r) in zip(θ,res)),))
-    res, T.(Symbolics.value.(V))
+using JuMP, MosekTools
+function convex_solve_Vd(A, B)
+    Vd = Hd_quad.Vd
+    m = length(Vd.mono)
+    model = Model(Mosek.Optimizer)
+    JuMP.@variable(model, R[1:m, 1:m], PSD)
+    # denseidx = zip(Vd.j, Vd.i)
+    # for i=1:m
+    #     for j=1:m
+    #         if !((i,j) in denseidx) && !((j,i) in denseidx)
+    #             @constraint(model, R[i,j] == 0.0)
+    #             # M[i,j] = 1
+    #         end
+    #     end
+    # end
+    
+    denseidx = filter(collect(Iterators.product(1:m, 1:m))) do x
+        first(x) <= last(x)
+    end
+    Rvec = [R[CartesianIndex(i,j)] for (i,j) in denseidx]
+
+    x = A*Rvec - B
+    JuMP.@variable(model, t)
+    @constraint(model, [t; x] in SecondOrderCone())
+    @objective(model, Min, t)
+    optimize!(model)
+    res = value.(R)
+    L = cholesky(res).U
+    θ = [L[CartesianIndex(i,j)] for (i,j) in denseidx]
+    θ, res
 end
