@@ -48,9 +48,8 @@ function QuadraticEnergyFunction(
     #     [nin, num_hidden_nodes, num_hidden_nodes, 1],
     #     symmetric=symmetric
     # )
-    Vd = SOSPoly(nin, 4)
-    # Vd = SymmetricSOSPoly(nin, 8)
-    J2 = [SkewSymNeuralNetwork(T, dim_q, nin=nin, num_hidden_nodes=8) for _=1:dim_q]
+    Vd = symmetric ? SymmetricSOSPoly(nin, 8) : SOSPoly(nin, 2)
+    J2 = [SkewSymNeuralNetwork(T, dim_q, nin=nin, num_hidden_nodes=8, symmetric=symmetric) for _=1:dim_q]
     θ = [ Md_inv.net.θ; Vd.θ; (Uk.net.θ for Uk in J2)...]
     _θind = Dict(
         :Md => 1 : length(Md_inv.net.θ), 
@@ -254,15 +253,14 @@ function train_Md!(Hd::QuadraticEnergyFunction{T}; max_iters=100, η=0.01, batch
     # Generate data
     data = Vector{T}[]
     qmax = 1f0;
-    qmin = -qmax
-    q1range = range(-10f0, 10f0, step=step)
-    q2range = range(-qmax, qmax, length=21)
-    # q0 = T[cos(0); sin(0); cos(0); sin(0)]
-    q0 = T[0, 0]
+    q1range = range(-qmax, qmax, step=step)
+    q2range = range(-qmax, qmax, step=step)
+    q0 = T[cos(0); sin(0); cos(0); sin(0)]
+    # q0 = T[0, 0]
     for q1 in q1range
         for q2 in q2range
-            push!(data, [q1; q2])
-            # push!(data, [cos(q1); sin(q1); cos(q2); sin(q2)])
+            # push!(data, [q1; q2])
+            push!(data, [cos(q1); sin(q1); cos(q2); sin(q2)])
         end
     end
     dataloader = Data.DataLoader(data; batchsize=batchsize, shuffle=true)
@@ -281,7 +279,7 @@ function train_Md!(Hd::QuadraticEnergyFunction{T}; max_iters=100, η=0.01, batch
         +(
             # map(x -> pde_loss_Md(Hd,x,θ), data) |> sum |> x -> /(x,N),
             map(x -> pde_loss_Vd(Hd,x,θ), data) |> sum |> x -> /(x,N),
-            # abs2(Hd.Vd(q0,θVd)[1]),
+            abs2(Hd.Vd(q0,θVd)[1]),
             # sum(abs2, gradient(Hd.Vd, q0, θVd)),
             # map(x -> -Hd.Vd(x,θVd)[1], data) |> sum, #x -> *(x,-one(x)),
             # map(x -> mimic_quadratic_Vd(Hd,x,θ), data) |> sum |> x -> *(x,T(0.001)),
@@ -339,7 +337,7 @@ function controller(Hd::QuadraticEnergyFunction{T}) where {T<:Real}
         end
 
         Gu_es = ∂H∂q(q, p) .- T(1)*( inv(M(q) * Mdi) * (∇q_Hd(q, p, θ) / kp) .+ kp*J2*Mdi*p )
-        u_di = -T(1)*dot(G, 2*kp*Mdi*p)
+        u_di = -T(20)*dot(G, 2*kp*Mdi*p)
         return T(1)*dot( inv(G'*G)*G', Gu_es ) + u_di
     end
 end

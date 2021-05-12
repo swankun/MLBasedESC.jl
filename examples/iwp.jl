@@ -51,8 +51,8 @@ end
 const input_matrix = Float32[-1; 1]
 const input_matrix_perp = Float32[1 1]
 function random_state(T::DataType)
-    q1 = T(π/6)*T(2)*(rand(T) - T(0.5))
-    q2 = T(π/6)*T(2)*(rand(T) - T(0.5))
+    q1 = T(π)*T(2)*(rand(T) - T(0.5))
+    q2 = T(π)*T(2)*(rand(T) - T(0.5))
     vcat(
         cos(q1),
         sin(q1),
@@ -69,7 +69,7 @@ dim_S1=[1,2]
 Hd = EnergyFunction(Float32, NX, dynamics!, loss, dim_S1=dim_S1, num_hidden_nodes=32)
 Hd_quad = QuadraticEnergyFunction(Float32,
     NX, dynamics, loss, ∂KE∂q, ∂PE∂q, mass_matrix, input_matrix, input_matrix_perp, 
-    dim_S1=dim_S1, num_hidden_nodes=16, symmetric=!true
+    dim_S1=dim_S1, num_hidden_nodes=16, symmetric=false
 )
 q = random_state(Float32)[1:4]
 p = rand(Float32, 2)
@@ -184,7 +184,7 @@ plot_traj(Hd_quad, x0::Vector, tf=Hd_quad.hyper.time_horizon) = begin
         plot(t,xbar[2,:], label="q2"),
         plot(t,xbar[3,:], label="q1dot"),
         plot(t,xbar[4,:], label="q2dot"),
-        plot(t,vec(mapslices(u, x, dims=1)), label="u"),
+        plot(t,x[7,:], label="u"),
         dpi=100, layout=(5,1)
     )
 end

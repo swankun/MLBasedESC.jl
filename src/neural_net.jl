@@ -191,6 +191,7 @@ end
 mutable struct SkewSymNeuralNetwork{N<:NeuralNetwork}
     n::Int
     net::N
+    odd_function::Bool
 end 
 
 function SkewSymNeuralNetwork( T::Type,
@@ -207,12 +208,17 @@ function SkewSymNeuralNetwork( T::Type,
         fill(num_hidden_nodes, depth-1)..., 
         Int(n*(n-1)/2)
     )
-    net = NeuralNetwork(T, widths, σ, σ′)
-    SkewSymNeuralNetwork{typeof(net)}(n, net)
+    net = NeuralNetwork(T, widths, σ, σ′, symmetric=false);
+    odd_function = ifelse(symmetric, true, false)
+    SkewSymNeuralNetwork{typeof(net)}(n, net, odd_function)
 end
 
 function (S::SkewSymNeuralNetwork)(x, p=S.net.θ)
-    l = (S.net.chain(x, p) - S.net.chain(-x, p)) / 2
+    if S.odd_function
+        l = (S.net.chain(x, p) - S.net.chain(-x, p)) / 2
+    else
+        l = S.net.chain(x, p)
+    end
     L = vec2tril(l, true)
     return L - L'
 end
@@ -232,7 +238,11 @@ function gradient(S::SkewSymNeuralNetwork, x, θ=S.net.θ)
     Returns Array{Matrix{T}} with 'nin' elements, and the ith matrix is
     the gradient of output w.r.t. the ith input
     """
-    l = ( gradient(S.net, x, θ) + gradient(S.net, -x, θ) ) / 2
+    if S.odd_function
+        l = ( gradient(S.net, x, θ) + gradient(S.net, -x, θ) ) / 2
+    else
+        l = gradient(S.net, x, θ)
+    end
     ∂L∂x = [ vec2tril(col, true) for col in eachcol(l) ]
     return [ dL - dL' for dL in ∂L∂x ]
 end
