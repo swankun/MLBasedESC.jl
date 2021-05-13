@@ -3,13 +3,34 @@ using LinearAlgebra
 using Plots; pyplot()
 using ReverseDiff
 
+const Kt = 1/(60.3e-3)
+const r = 45/34*13/3        # Gear and belt ratio
+const mp = 0.706
+# const mr = 0.084 + 4 * 0.12946    # m_resin + 2*m_steel = 0.084 + 2 * 0.12946
+const mr = 0.223
+const m = mp + mr
+const lr = 0.18217
+const lp = lr/2
+const l = (mp*lp + mr*lr)/m
+const g = 9.81
+const Ip_com = 0.00249
+const I_epoxy = 1100 * 7.919e4 / 1e9 * (0.18/2)^2
+const I_steel = 9.484e-4
+const I_resin = 7.559e-4
+const I_resin_new = 4.64e-4
+const I1 = Ip_com + mp*lp^2 + mr*lr^2
+# const I2 = I_resin_new + 4*I_steel
+const I2 = I_resin + I_epoxy
+const τ_max = 0.1
+const γ1 = 2. # 1.5*ceil(m*g*l)
+const γ2 = 25. # 3*ceil(I1/I2) * γ1 / (γ1 - m*g*l)
+const k = (1.0, 10.0)
+
 function dynamics(x, u)
     cq1, sq1, cq2, sq2, q1dot, q2dot = x
-    I1 = 0.1f0
-    I2 = 0.2f0
-    m3 = 10f0
+    m3 = m*g*l
     ϵ  = 0.01f0
-    b1 = b2 = 0.01f0
+    b1 = b2 = 0.0f0
     ẍ1 = -sq1*q1dot - ϵ*cq1*(sq1^2 + cq1^2 - 1)
     ẍ2 =  cq1*q1dot - ϵ*sq1*(sq1^2 + cq1^2 - 1)
     ẍ3 = -sq2*q2dot - ϵ*cq2*(sq2^2 + cq2^2 - 1)
@@ -20,11 +41,9 @@ function dynamics(x, u)
 end
 function dynamics!(dx, x, u)
     cq1, sq1, cq2, sq2, q1dot, q2dot = x
-    I1 = 0.1f0
-    I2 = 0.2f0
-    m3 = 10f0
+    m3 = m*g*l
     ϵ  = 0.01f0
-    b1 = b2 = 0.01f0
+    b1 = b2 = 0.0f0
     dx[1] = -sq1*q1dot - ϵ*cq1*(sq1^2 + cq1^2 - 1)
     dx[2] =  cq1*q1dot - ϵ*sq1*(sq1^2 + cq1^2 - 1)
     dx[3] = -sq2*q2dot - ϵ*cq2*(sq2^2 + cq2^2 - 1)
@@ -42,10 +61,10 @@ function loss(x)
     # return sum(abs2, dist)
 end
 ∂KE∂q(q,j) = zeros(Float32, 2, 2)
-∂PE∂q(q) =  [ -10f0*q[2]; 0f0 ]
+∂PE∂q(q) =  [ -m*g*l*q[2]; 0f0 ]
 ∂H∂q(q,p) = eltype(q)(1/2)*sum([∂KE∂q(q,k)*p[k] for k=1:2])'*p + ∂PE∂q(q)
 function mass_matrix(q)
-    return diagm(Float32[0.1; 0.2])
+    return diagm(Float32[I1; I2])
     # return Float32[0.1 0; 0 0.2]
 end
 const input_matrix = Float32[-1; 1]
