@@ -48,7 +48,7 @@ function QuadraticEnergyFunction(
     #     [nin, num_hidden_nodes, num_hidden_nodes, 1],
     #     symmetric=symmetric
     # )
-    Vd = symmetric ? SymmetricSOSPoly(nin, 8) : SOSPoly(nin, 2)
+    Vd = symmetric ? SymmetricSOSPoly(nin, 8) : SOSPoly(nin, 3)
     J2 = [SkewSymNeuralNetwork(T, dim_q, nin=nin, num_hidden_nodes=8, symmetric=symmetric) for _=1:dim_q]
     θ = [ Md_inv.net.θ; Vd.θ; (Uk.net.θ for Uk in J2)...]
     _θind = Dict(
@@ -238,7 +238,7 @@ function mimic_quadratic_Vd(Hd::QuadraticEnergyFunction{T}, q, θ=Hd.θ) where {
     end
 
     if isequal(length(θ), length(Hd.θ))
-        p = ones(T, Int(n*(n+1)/2))
+        p = ones(T, Int(n*(n+1) ÷ 2))
     else
         p = @view θ[ length(Hd.θ)+1:length(Hd.θ)+n+1 ]
     end
@@ -282,13 +282,16 @@ function train_Md!(Hd::QuadraticEnergyFunction{T}; max_iters=100, η=0.01, batch
             # abs2(Hd.Vd(q0,θVd)[1]),
             # sum(abs2, gradient(Hd.Vd, q0, θVd)),
             # map(x -> -Hd.Vd(x,θVd)[1], data) |> sum, #x -> *(x,-one(x)),
-            # map(x -> mimic_quadratic_Vd(Hd,x,θ), data) |> sum |> x -> *(x,T(0.001)),
+            # map(x -> mimic_quadratic_Vd(Hd,x,θ), data) |> sum |> x -> *(x,T(1)),
             # map(x -> symmetry_loss(Hd,x,θ), data) |> sum |> x -> /(x,N),
         )
     end
-    params_to_train = Hd.θ
+    # params_to_train = Hd.θ
+    n = Hd.Md_inv.n
+    quadratic_mimic_coeff = glorot_uniform(Int(n*(n+1) ÷ 2))
     epoch = 1
     while epoch < max_iters
+        params_to_train = [Hd.θ; quadratic_mimic_coeff]
         current_loss = _loss(data)
         printfmt(fexpr, epoch, current_loss)
         sum(current_loss) <= 1e-5 && break
@@ -298,6 +301,7 @@ function train_Md!(Hd::QuadraticEnergyFunction{T}; max_iters=100, η=0.01, batch
             if !any(isnan.(gs))
                 Optimise.update!(opt, params_to_train, gs)
                 set_params(Hd, params_to_train[1:length(Hd.θ)])
+                quadratic_mimic_coeff = params_to_train[length(Hd.θ)+1:end]
                 # Hd.θ = params_to_train[1:length(Hd.θ)]
                 # set_params(Hd.Md_inv, Hd.θ[Hd._θind[:Md]])
                 # set_params(Hd.Vd,     Hd.θ[Hd._θind[:Vd]])

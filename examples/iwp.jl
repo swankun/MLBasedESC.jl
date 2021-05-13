@@ -30,7 +30,7 @@ function dynamics(x, u)
     cq1, sq1, cq2, sq2, q1dot, q2dot = x
     m3 = m*g*l
     ϵ  = 0.01f0
-    b1 = b2 = 0.0f0
+    b1 = b2 = 0.01f0
     ẍ1 = -sq1*q1dot - ϵ*cq1*(sq1^2 + cq1^2 - 1)
     ẍ2 =  cq1*q1dot - ϵ*sq1*(sq1^2 + cq1^2 - 1)
     ẍ3 = -sq2*q2dot - ϵ*cq2*(sq2^2 + cq2^2 - 1)
@@ -43,7 +43,7 @@ function dynamics!(dx, x, u)
     cq1, sq1, cq2, sq2, q1dot, q2dot = x
     m3 = m*g*l
     ϵ  = 0.01f0
-    b1 = b2 = 0.0f0
+    b1 = b2 = 0.01f0
     dx[1] = -sq1*q1dot - ϵ*cq1*(sq1^2 + cq1^2 - 1)
     dx[2] =  cq1*q1dot - ϵ*sq1*(sq1^2 + cq1^2 - 1)
     dx[3] = -sq2*q2dot - ϵ*cq2*(sq2^2 + cq2^2 - 1)
