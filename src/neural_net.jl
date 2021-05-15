@@ -9,11 +9,12 @@ struct LayerParamIndices
     b    :: UnitRange{IndexType}
 end
 
-mutable struct NeuralNetwork{T<:Real, ChainType<:Union{Chain, FastChain}, LayerType<:Union{Dense, FastDense}, F1, F2}
+mutable struct NeuralNetwork{T<:Real, ChainType<:Union{Chain, FastChain}, LayerType<:Union{Dense, FastDense}, F1, F2, F3}
     depth  :: IndexType
     widths :: Vector{IndexType}
     σ      :: F1
     σ′     :: F2
+    dfout  :: F3
     chain  :: ChainType
     layers :: Tuple{Vararg{LayerType}}
     θ      :: Vector{T}
@@ -24,12 +25,14 @@ function NeuralNetwork( T::Type,
                         widths::Vector{Int}, 
                         σ::Function=elu, 
                         σ′::Function=delu ;
-                        symmetric::Bool=false )
+                        symmetric::Bool=false,
+                        fout::Function=identity,
+                        dfout::Function=one )
     
     depth = length(widths)-1
     layers = Tuple([
         FastDense(
-            widths[i-1], widths[i], i==depth+1 ? identity : σ,
+            widths[i-1], widths[i], i==depth+1 ? fout : σ,
             # widths[i-1], widths[i], i==depth+1 ? relu : σ,
             # widths[i-1], widths[i], i==depth+1 ? x->x.^2 : σ,
             initW=glorot_uniform, initb=glorot_uniform
@@ -58,8 +61,8 @@ function NeuralNetwork( T::Type,
     end
     @assert length(inds) == depth
 
-    NeuralNetwork{T, typeof(chain), eltype(layers), typeof(σ), typeof(σ′)}(
-        depth, widths, σ, σ′, chain, layers, θ, inds
+    NeuralNetwork{T, typeof(chain), eltype(layers), typeof(σ), typeof(σ′), typeof(dfout)}(
+        depth, widths, σ, σ′, dfout, chain, layers, θ, inds
     )
 end
 
@@ -125,9 +128,8 @@ function gradient(net::NeuralNetwork, x, θ=net.θ)
     if _issymmetric(net)
         return ∂NNx .* reduce(hcat, [fill(eltype(x)(2)*y, last(net.widths)) for y in x])
     else
-        return ∂NNx
-        # return drelu.(_applychain(net, θ, net.depth, x)) .* ∂NNx
-        # return (2f0 * _applychain(net, θ, net.depth, x)) .* ∂NNx
+        # return ∂NNx
+        return net.dfout.(_applychain(net, θ, net.depth, x)) .* ∂NNx
     end
 end
 

@@ -44,11 +44,11 @@ function QuadraticEnergyFunction(
     dim_q = (dim_input - length(dim_S1)) ÷ 2
     nin = length(dim_S1) + dim_q 
     Md_inv = PSDNeuralNetwork(T, dim_q, nin=nin, symmetric=symmetric)
-    # Vd = NeuralNetwork(T, 
-    #     [nin, num_hidden_nodes, num_hidden_nodes, 1],
-    #     symmetric=symmetric
-    # )
-    Vd = symmetric ? SymmetricSOSPoly(nin, 8) : SOSPoly(nin, 3)
+    Vd = NeuralNetwork(T, 
+        [nin, num_hidden_nodes, num_hidden_nodes, 1],
+        symmetric=symmetric, fout=x->x.^2, dfout=x->2x
+    )
+    # Vd = symmetric ? SymmetricSOSPoly(nin, 8) : SOSPoly(nin, 3)
     J2 = [SkewSymNeuralNetwork(T, dim_q, nin=nin, num_hidden_nodes=8, symmetric=symmetric) for _=1:dim_q]
     θ = [ Md_inv.net.θ; Vd.θ; (Uk.net.θ for Uk in J2)...]
     _θind = Dict(
@@ -277,9 +277,9 @@ function train_Md!(Hd::QuadraticEnergyFunction{T}; max_iters=100, η=0.01, batch
         θVd = θ[Hd._θind[:Vd]]
         N = size(data, 1)
         +(
-            map(x -> pde_loss_Md(Hd,x,θ), data) |> sum |> x -> /(x,N),
-            # map(x -> pde_loss_Vd(Hd,x,θ), data) |> sum |> x -> /(x,N),
-            # abs2(Hd.Vd(q0,θVd)[1]),
+            # map(x -> pde_loss_Md(Hd,x,θ), data) |> sum |> x -> /(x,N),
+            map(x -> pde_loss_Vd(Hd,x,θ), data) |> sum |> x -> /(x,N),
+            abs2(Hd.Vd(q0,θVd)[1]),
             # sum(abs2, gradient(Hd.Vd, q0, θVd)),
             # map(x -> -Hd.Vd(x,θVd)[1], data) |> sum, #x -> *(x,-one(x)),
             # map(x -> mimic_quadratic_Vd(Hd,x,θ), data) |> sum |> x -> *(x,T(1)),
@@ -341,7 +341,7 @@ function controller(Hd::QuadraticEnergyFunction{T}) where {T<:Real}
         end
 
         Gu_es = ∂H∂q(q, p) .- T(1)*( inv(M(q) * Mdi) * (∇q_Hd(q, p, θ) / kp) .+ kp*J2*Mdi*p )
-        u_di = -T(20)*dot(G, 2*kp*Mdi*p)
+        u_di = -T(1)*dot(G, 2*kp*Mdi*p)
         return T(1)*dot( inv(G'*G)*G', Gu_es ) + u_di
     end
 end
@@ -356,7 +356,7 @@ function predict(Hd::QuadraticEnergyFunction{T}, x0::Vector, θ::Vector=Hd.θ, t
                 (0f0, tf), 
                 θ
             ), 
-            Tsit5(), abstol=1e-6, reltol=1e-6,  
+            Vern9(), abstol=1f-3, reltol=1f-3,  
             u0=x0, 
             p=θ, 
             saveat=Hd.hyper.step_size
