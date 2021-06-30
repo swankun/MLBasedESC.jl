@@ -44,12 +44,12 @@ function QuadraticEnergyFunction(
     dim_q = (dim_input - length(dim_S1)) ÷ 2
     nin = length(dim_S1) + dim_q 
     Md_inv = PSDNeuralNetwork(T, dim_q, nin=nin, symmetric=symmetric)
-    Vd = NeuralNetwork(T, 
-        [nin, num_hidden_nodes, num_hidden_nodes, 1],
-        symmetric=symmetric, fout=x->x.^2, dfout=x->2x
-    )
-    # Vd = symmetric ? SymmetricSOSPoly(nin, 8) : SOSPoly(nin, 3)
-    J2 = [SkewSymNeuralNetwork(T, dim_q, nin=nin, num_hidden_nodes=8, symmetric=symmetric) for _=1:dim_q]
+    # Vd = NeuralNetwork(T, 
+    #     [nin, num_hidden_nodes, num_hidden_nodes, 1],
+    #     symmetric=symmetric, fout=x->x.^2, dfout=x->2x
+    # )
+    Vd = symmetric ? SymmetricSOSPoly(nin, 8) : SOSPoly(nin, 2)
+    J2 = [SkewSymNeuralNetwork(T, dim_q, nin=nin, num_hidden_nodes=16, symmetric=symmetric) for _=1:dim_q]
     θ = [ Md_inv.net.θ; Vd.θ; (Uk.net.θ for Uk in J2)...]
     _θind = Dict(
         :Md => 1 : length(Md_inv.net.θ), 
@@ -201,19 +201,24 @@ function pde_loss_Md(Hd::QuadraticEnergyFunction{T}, q, θ=Hd.θ) where {T<:Real
         ∇q_Mdinv_j = reshape(∇q_Mdinv[:,j], dim_q, :) * jac
         θUk = @view θ[ Hd._θind[Symbol("U", j)] ]
         Uk = Hd.J2[j](q, θUk)
-        sum(abs2, Gperp * (∇q_Minv_j' - Md*Minv*∇q_Mdinv_j' + Uk*Mdinv))
+        sum(abs2, Gperp * (∇q_Minv_j' - Md*Minv*∇q_Mdinv_j' + 0*Uk*Mdinv))
     end |> sum
 end
 
 
 function pde_loss_Vd(Hd::QuadraticEnergyFunction{T}, q, θ=Hd.θ) where {T<:Real}
     dim_q = Hd.Md_inv.n
-    θMd = @view Hd.θ[ Hd._θind[:Md] ]
+    # θMd = @view Hd.θ[ Hd._θind[:Md] ]
+    θMd = @view θ[ Hd._θind[:Md] ]
     
     ∇q_Vd = _pe_gradient(Hd, q, θ)
     M = Hd.mass_matrix(q)
     Md_inv = Hd.Md_inv(q, θMd)
     return dot( Hd.input_matrix_perp, ( Hd.∂PE∂q(q) - inv(M*Md_inv)*vec(∇q_Vd) ) ) |> abs2
+end
+
+function pde_loss(Hd::QuadraticEnergyFunction, q, θ=Hd.θ)
+    pde_loss_Md(Hd,q,θ) + pde_loss_Vd(Hd,q,θ)
 end
 
 
@@ -277,9 +282,9 @@ function train_Md!(Hd::QuadraticEnergyFunction{T}; max_iters=100, η=0.01, batch
         θVd = θ[Hd._θind[:Vd]]
         N = size(data, 1)
         +(
-            # map(x -> pde_loss_Md(Hd,x,θ), data) |> sum |> x -> /(x,N),
+            map(x -> pde_loss_Md(Hd,x,θ), data) |> sum |> x -> /(x,N),
             map(x -> pde_loss_Vd(Hd,x,θ), data) |> sum |> x -> /(x,N),
-            abs2(Hd.Vd(q0,θVd)[1]),
+            100f0*abs2(Hd.Vd(q0,θVd)[1]),
             # sum(abs2, gradient(Hd.Vd, q0, θVd)),
             # map(x -> -Hd.Vd(x,θVd)[1], data) |> sum, #x -> *(x,-one(x)),
             # map(x -> mimic_quadratic_Vd(Hd,x,θ), data) |> sum |> x -> *(x,T(1)),
@@ -327,21 +332,24 @@ function controller(Hd::QuadraticEnergyFunction{T}) where {T<:Real}
     ∇q_Hd = gradient(Hd)
     ∂H∂q(q, p) = T(1/2)*sum([Hd.∂KE∂q(q,k)*p[k] for k=1:2])'*p .+ Hd.∂PE∂q(q)
     k = first(Hd.Md_inv.net.widths)
-    kp = T(1)
     u(x, θ=Hd.θ) = begin
+        if (1-x[1]) <= 0.011 && x[5] <= 2f0
+            K = Float32[-50.024  -10.0  -5.0014  -4.0012]
+            return -dot(K, Float32[x[2], x[4], x[5], x[6]])
+        end
         q = x[1:k]
         p = x[k+1:end] .* diag(M(q))
 
         θMd = @view θ[ Hd._θind[:Md] ]
-        Mdi = (1/kp)*Hd.Md_inv(q,θMd)
+        Mdi = Hd.Md_inv(q,θMd)
         J2 = zeros(T, length(p), length(p))
         for j = 1:length(p)
             θUj = @view θ[ Hd._θind[Symbol("U", j)] ]
-            J2 .+= T(1/2)*Hd.J2[j](q, θUj)*p[j]
+            J2 .+= 0f0*T(1/2)*Hd.J2[j](q, θUj)*p[j]
         end
 
-        Gu_es = ∂H∂q(q, p) .- T(1)*( inv(M(q) * Mdi) * (∇q_Hd(q, p, θ) / kp) .+ kp*J2*Mdi*p )
-        u_di = -T(1)*dot(G, 2*kp*Mdi*p)
+        Gu_es = ∂H∂q(q, p) .- T(1)*( inv(M(q) * Mdi) * ∇q_Hd(q, p, θ) .+ J2*Mdi*p )
+        u_di = -T(1)*dot(G, 2*Mdi*p)
         return T(1)*dot( inv(G'*G)*G', Gu_es ) + u_di
     end
 end

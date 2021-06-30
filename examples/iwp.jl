@@ -1,6 +1,16 @@
 using MLBasedESC
 using LinearAlgebra
-using Plots; pyplot()
+using Plots
+pyplot(
+    guidefontsize=28,
+    labelfontsize=24,
+    tickfontsize=26,
+    titlefontsize=30,
+    fontfamily="cmuserif",
+)
+Plots.pyrcparams["text.usetex"]="true"
+Plots.pyrcparams["mathtext.fontset"]="cm"
+using LaTeXStrings
 using ReverseDiff
 
 const Kt = 1/(60.3e-3)
@@ -18,9 +28,9 @@ const I_epoxy = 1100 * 7.919e4 / 1e9 * (0.18/2)^2
 const I_steel = 9.484e-4
 const I_resin = 7.559e-4
 const I_resin_new = 4.64e-4
-const I1 = Ip_com + mp*lp^2 + mr*lr^2
+const I1 = 0.1# Ip_com + mp*lp^2 + mr*lr^2
 # const I2 = I_resin_new + 4*I_steel
-const I2 = I_resin + I_epoxy
+const I2 = 0.2#I_resin + I_epoxy
 const τ_max = 0.1
 const γ1 = 2. # 1.5*ceil(m*g*l)
 const γ2 = 25. # 3*ceil(I1/I2) * γ1 / (γ1 - m*g*l)
@@ -28,9 +38,9 @@ const k = (1.0, 10.0)
 
 function dynamics(x, u)
     cq1, sq1, cq2, sq2, q1dot, q2dot = x
-    m3 = m*g*l
-    ϵ  = 0.01f0
-    b1 = b2 = 0.01f0
+    m3 = 10f0#m*g*l
+    ϵ  = 0.1f0
+    b1 = b2 = 0.0f0
     ẍ1 = -sq1*q1dot - ϵ*cq1*(sq1^2 + cq1^2 - 1)
     ẍ2 =  cq1*q1dot - ϵ*sq1*(sq1^2 + cq1^2 - 1)
     ẍ3 = -sq2*q2dot - ϵ*cq2*(sq2^2 + cq2^2 - 1)
@@ -41,9 +51,9 @@ function dynamics(x, u)
 end
 function dynamics!(dx, x, u)
     cq1, sq1, cq2, sq2, q1dot, q2dot = x
-    m3 = m*g*l
-    ϵ  = 0.01f0
-    b1 = b2 = 0.01f0
+    m3 = 10f0#m*g*l
+    ϵ  = 0.1f0
+    b1 = b2 = 0.0f0
     dx[1] = -sq1*q1dot - ϵ*cq1*(sq1^2 + cq1^2 - 1)
     dx[2] =  cq1*q1dot - ϵ*sq1*(sq1^2 + cq1^2 - 1)
     dx[3] = -sq2*q2dot - ϵ*cq2*(sq2^2 + cq2^2 - 1)
@@ -61,7 +71,7 @@ function loss(x)
     # return sum(abs2, dist)
 end
 ∂KE∂q(q,j) = zeros(Float32, 2, 2)
-∂PE∂q(q) =  [ -m*g*l*q[2]; 0f0 ]
+∂PE∂q(q) =  [ -10f0*q[2]; 0f0 ]
 ∂H∂q(q,p) = eltype(q)(1/2)*sum([∂KE∂q(q,k)*p[k] for k=1:2])'*p + ∂PE∂q(q)
 function mass_matrix(q)
     return diagm(Float32[I1; I2])
@@ -88,11 +98,11 @@ dim_S1=[1,2]
 Hd = EnergyFunction(Float32, NX, dynamics!, loss, dim_S1=dim_S1, num_hidden_nodes=32)
 Hd_quad = QuadraticEnergyFunction(Float32,
     NX, dynamics, loss, ∂KE∂q, ∂PE∂q, mass_matrix, input_matrix, input_matrix_perp, 
-    dim_S1=dim_S1, num_hidden_nodes=16, symmetric=false
+    dim_S1=dim_S1, num_hidden_nodes=32, symmetric=false
 )
 q = random_state(Float32)[1:4]
 p = rand(Float32, 2)
-x0 = Float32[cos(3), sin(3), cosd(0), sind(0), 0, 0]
+x0 = Float32[cos(3), sin(3), cos(0), sin(0), 0, 0]
 
 circle_constraints(x) = begin
     map(1:2) do i
@@ -171,10 +181,41 @@ test_pe_gradient() = begin
 end
 
 surf_Vd() = begin
-    x = y = range(-pi, pi, length=20)
-    surface(
+    x = y = range(-pi, pi, length=50)
+    plot(
         x, y,
-        (x,y) -> Hd_quad.Vd( [cos(x[1]); sin(x[1]); cos(y[1]); sin(y[1])] )[1]
+        (x,y) -> Hd_quad.Vd( [cos(x[1]); sin(x[1]); cos(y[1]); sin(y[1])] )[1],
+        st=:contourf,
+        c=:coolwarm,
+        xlabel=L"q_1",
+        ylabel=L"q_2"
+    )
+end
+
+surf_Hd() = begin
+    x = y = range(-pi, pi, length=50)
+    plot(
+        x, y,
+        (x,y) -> Hd_quad( [cos(x[1]); sin(x[1]); cos(y[1]); sin(y[1])], [0f0, 0f0] )[1],
+        st=:contourf,
+        c=:coolwarm,
+        xlabel=L"q_1",
+        ylabel=L"q_2",
+        # title=L"H_d^{\theta}(q,0)"
+    )
+end
+
+surf_control() = begin
+    u = controller(Hd_quad)
+    x = y = range(-pi, pi, length=50)
+    plot(
+        x, y,
+        (x,y) -> 0.1f0*u( [cos(x[1]); sin(x[1]); cos(y[1]); sin(y[1]); 0f0; 0f0] )[1],
+        st=:contourf,
+        c=:coolwarm,
+        xlabel=L"q_1",
+        ylabel=L"q_2",
+        # title=L"u_\theta(q,0)"
     )
 end
 
@@ -183,6 +224,19 @@ surf_Md() = begin
     surface(
         x, y,
         (x,y) -> cond( inv(Hd_quad.Md_inv( [cos(x[1]); sin(x[1]); cos(y[1]); sin(y[1])] )) )
+    )
+end
+
+surf_loss() = begin
+    x = y = range(-pi, pi, length=50)
+    plot(
+        x, y,
+        (x,y) -> pde_loss(Hd_quad, [cos(x[1]); sin(x[1]); cos(y[1]); sin(y[1])]),
+        # levels=[0.1,1,10],
+        st=:contourf,
+        c=:coolwarm,
+        xlabel=L"q_1",
+        ylabel=L"q_2"
     )
 end
 
@@ -213,7 +267,7 @@ train_ode(Hd::EnergyFunction; data=[random_state(Float32) for _=1:16], iters=100
     for i = 1:iters
         update!(Hd, data, verbose=verbose)
     end
-    x0 = Float32[cos(3), sin(3), cosd(0), sind(0), 0, 0]
+    x0 = Float32[cos(3), sin(3), cos(0), sin(0), 0, 0]
     plot_traj(Hd, x0, 30f0)
 end
 
@@ -234,4 +288,83 @@ generate_training_samples(Hd::EnergyFunction) = begin
         plot(tbar,x[4,:], label="q2dot"),
         dpi=100, layout=(4,1)
     )
+end
+
+function publish_plot()
+    rcParams = PyPlot.PyDict(PyPlot.matplotlib."rcParams")
+    merge!(
+        rcParams,
+        Dict(
+            "patch.edgecolor" => "white",
+            "text.color" => "black",
+            "axes.facecolor" => "white",
+            "axes.edgecolor" => "black",
+            "axes.labelcolor" => "black",
+            "xtick.color" => "black",
+            "ytick.color" => "black",
+            "grid.color" => "black",
+            "figure.facecolor" => "white",
+            "figure.edgecolor" => "black",
+            "savefig.facecolor" => "white",
+            "savefig.edgecolor" => "black",
+            "toolbar" => "toolbar2",
+            "image.cmap" => "plasma",
+            "text.usetex" => true,
+            "font.family" => "serif",
+            "font.serif" => "DejaVu Serif",
+            "font.weight" => "bold",
+            "font.size" => 24.0,
+            "axes.titleweight" => "bold"
+        )
+    )
+    pi_ticks = -5pi:pi:5pi
+    pi_ticklabels = ["$(i)" * L"\pi" for i = -5:5]
+    halfpi_ticks = -2.5pi:0.5pi:2.5pi
+    halfpi_ticklabels = ["$(i)" * L"\pi" for i = -2.5:0.5:2.5]
+    pi_axlim = [first(pi_ticks), last(pi_ticks)]
+
+    num_plot_samples = 500
+    tf = 28f0
+    x0 = Float32[cos(3), sin(3), cosd(0), sind(0), 0, 0]
+    old_tf = Hd_quad.hyper.time_horizon
+    old_dt = Hd_quad.hyper.step_size
+    Hd_quad.hyper.time_horizon = typeof(old_tf)(tf)
+    Hd_quad.hyper.step_size = typeof(old_tf)(tf/num_plot_samples)
+    t = range(0, Hd_quad.hyper.time_horizon, step=Hd_quad.hyper.step_size)
+    x = predict(Hd_quad, x0)
+    xbar = to_states(x[1:6,:])
+    Hd_quad.hyper.time_horizon = old_tf
+    Hd_quad.hyper.step_size = old_dt
+
+    fig = PyPlot.figure(1)
+    fig.clf()
+    for i = 1:4
+        fig.add_subplot(1,4,i)
+    end
+    fig.axes[1].plot(t, xbar[1,:], "k")
+    fig.axes[2].plot(t, xbar[3,:], "k")
+    fig.axes[3].plot(t, xbar[2,:], "k")
+    fig.axes[4].plot(t, xbar[4,:], "k")
+
+    fig.axes[1].set_yticks(halfpi_ticks)
+    fig.axes[1].set_yticklabels(halfpi_ticklabels)
+    fig.axes[1].set_ylim([-0.2pi, 2.2pi])
+    fig.axes[3].set_yticks(-0.2pi:0.1pi:0.2pi)
+    fig.axes[3].set_yticklabels(["$(i)" * L"\pi" for i = -0.2:0.1:0.2])
+    fig.axes[2].set_ylim([-25., 25.])
+    fig.axes[3].set_ylim([-0.12pi, 0.12pi])
+    fig.axes[4].set_ylim([-0.52, 0.52])
+
+    for i = 1:4
+        fig.axes[i].set_xlim([-2.0, 25])
+        fig.axes[i].set_xticks(0:5:25)
+    end
+
+    fig.axes[1].set_title(L"$q_1(t)$ (rad)")
+    fig.axes[2].set_title(L"$\dot{q}_1(t)$ (rad/s)")
+    fig.axes[3].set_title(L"$q_2(t)$ (rad)")
+    fig.axes[4].set_title(L"$\dot{q}_2(t)$ (rad/s)")
+
+    fig.show()
+    fig.tight_layout()
 end
