@@ -121,16 +121,19 @@ Zygote.@nograd _issymmetric
 
 
 function gradient(net::NeuralNetwork, x, θ=net.θ)
+    fout = x->x.^2
     ∂NNx = identity.( 
         get_weights(net, θ, net.depth) * 
         prod(net.σ′.(_applychain(net, θ, i, x)) .* get_weights(net, θ, i) for i = net.depth-1:-1:1) 
     ) 
     if _issymmetric(net)
-        return ∂NNx .* reduce(hcat, [fill(eltype(x)(2)*y, last(net.widths)) for y in x])
-    else
-        # return ∂NNx
-        return net.dfout.(_applychain(net, θ, net.depth, x)) .* ∂NNx
+        ∂NNx = ∂NNx .* reduce(hcat, [fill(eltype(x)(2)*y, last(net.widths)) for y in x])
     end
+    if fout != identity
+        # return ∂NNx
+        ∂NNx = net.dfout.(_applychain(net, θ, net.depth, x)) .* ∂NNx
+    end
+    return ∂NNx
 end
 
 function hessian(net::NeuralNetwork, x, θ=net.θ)

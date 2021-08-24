@@ -19,7 +19,6 @@ mutable struct QuadraticEnergyFunction{T<:Real, HY, N1, N2, N3, F1, F2, F3, F4, 
     input_matrix_perp::VecOrMat{T}
 end
 
-
 function QuadraticEnergyFunction( 
     T::DataType, 
     dim_input::Int,
@@ -43,13 +42,15 @@ function QuadraticEnergyFunction(
     # Neural networks
     dim_q = (dim_input - length(dim_S1)) ÷ 2
     nin = length(dim_S1) + dim_q 
-    Md_inv = PSDNeuralNetwork(T, dim_q, nin=nin, symmetric=symmetric)
+    Md_inv = PSDNeuralNetwork(T, dim_q, nin=nin, symmetric=symmetric, num_hidden_nodes=num_hidden_nodes)
     # Vd = NeuralNetwork(T, 
     #     [nin, num_hidden_nodes, num_hidden_nodes, 1],
-    #     symmetric=symmetric, fout=x->x.^2, dfout=x->2x
+    #     symmetric=symmetric, 
+    #     fout=x->x.^2, dfout=x->2x
+    #     # fout=relu, dfout=drelu
     # )
-    Vd = symmetric ? SymmetricSOSPoly(nin, 8) : SOSPoly(nin, 2)
-    J2 = [SkewSymNeuralNetwork(T, dim_q, nin=nin, num_hidden_nodes=16, symmetric=symmetric) for _=1:dim_q]
+    Vd = symmetric ? SymmetricSOSPoly(nin, 8) : SOSPoly(nin, 4)
+    J2 = [SkewSymNeuralNetwork(T, dim_q, nin=nin, num_hidden_nodes=num_hidden_nodes, symmetric=symmetric) for _=1:dim_q]
     θ = [ Md_inv.net.θ; Vd.θ; (Uk.net.θ for Uk in J2)...]
     _θind = Dict(
         :Md => 1 : length(Md_inv.net.θ), 
@@ -201,7 +202,7 @@ function pde_loss_Md(Hd::QuadraticEnergyFunction{T}, q, θ=Hd.θ) where {T<:Real
         ∇q_Mdinv_j = reshape(∇q_Mdinv[:,j], dim_q, :) * jac
         θUk = @view θ[ Hd._θind[Symbol("U", j)] ]
         Uk = Hd.J2[j](q, θUk)
-        sum(abs2, Gperp * (∇q_Minv_j' - Md*Minv*∇q_Mdinv_j' + 0*Uk*Mdinv))
+        sum(abs2, Gperp * (∇q_Minv_j' - Md*Minv*∇q_Mdinv_j' + Uk*Mdinv))
     end |> sum
 end
 
@@ -258,14 +259,16 @@ function train_Md!(Hd::QuadraticEnergyFunction{T}; max_iters=100, η=0.01, batch
     # Generate data
     data = Vector{T}[]
     qmax = Float32(pi);
-    q1range = range(-qmax, qmax, step=step)
-    q2range = range(-qmax, qmax, step=step)
-    q0 = T[cos(0); sin(0); cos(0); sin(0)]
-    # q0 = T[0, 0]
+    # q1range = range(-qmax, qmax, step=step)
+    # q2range = range(-qmax, qmax, step=step)
+    q1range = range(-5f0, 5f0, step=0.05f0)
+    q2range = range(-0.6f0, 0.6f0, step=0.05f0)
+    # q0 = T[cos(0); sin(0); cos(0); sin(0)]
+    q0 = T[0, 0]
     for q1 in q1range
         for q2 in q2range
-            # push!(data, [q1; q2])
-            push!(data, [cos(q1); sin(q1); cos(q2); sin(q2)])
+            push!(data, [q1; q2])
+            # push!(data, [cos(q1); sin(q1); cos(q2); sin(q2)])
         end
     end
     dataloader = Data.DataLoader(data; batchsize=batchsize, shuffle=true)
@@ -284,7 +287,7 @@ function train_Md!(Hd::QuadraticEnergyFunction{T}; max_iters=100, η=0.01, batch
         +(
             map(x -> pde_loss_Md(Hd,x,θ), data) |> sum |> x -> /(x,N),
             map(x -> pde_loss_Vd(Hd,x,θ), data) |> sum |> x -> /(x,N),
-            100f0*abs2(Hd.Vd(q0,θVd)[1]),
+            # 100f0*abs2(Hd.Vd(q0,θVd)[1]),
             # sum(abs2, gradient(Hd.Vd, q0, θVd)),
             # map(x -> -Hd.Vd(x,θVd)[1], data) |> sum, #x -> *(x,-one(x)),
             # map(x -> mimic_quadratic_Vd(Hd,x,θ), data) |> sum |> x -> *(x,T(1)),
@@ -333,10 +336,6 @@ function controller(Hd::QuadraticEnergyFunction{T}) where {T<:Real}
     ∂H∂q(q, p) = T(1/2)*sum([Hd.∂KE∂q(q,k)*p[k] for k=1:2])'*p .+ Hd.∂PE∂q(q)
     k = first(Hd.Md_inv.net.widths)
     u(x, θ=Hd.θ) = begin
-        if (1-x[1]) <= 0.011 && x[5] <= 2f0
-            K = Float32[-50.024  -10.0  -5.0014  -4.0012]
-            return -dot(K, Float32[x[2], x[4], x[5], x[6]])
-        end
         q = x[1:k]
         p = x[k+1:end] .* diag(M(q))
 
@@ -345,7 +344,7 @@ function controller(Hd::QuadraticEnergyFunction{T}) where {T<:Real}
         J2 = zeros(T, length(p), length(p))
         for j = 1:length(p)
             θUj = @view θ[ Hd._θind[Symbol("U", j)] ]
-            J2 .+= 0f0*T(1/2)*Hd.J2[j](q, θUj)*p[j]
+            J2 .+= T(1/2)*Hd.J2[j](q, θUj)*p[j]
         end
 
         Gu_es = ∂H∂q(q, p) .- T(1)*( inv(M(q) * Mdi) * ∇q_Hd(q, p, θ) .+ J2*Mdi*p )
