@@ -348,7 +348,7 @@ function controller(Hd::QuadraticEnergyFunction{T}) where {T<:Real}
         end
 
         Gu_es = ∂H∂q(q, p) .- T(1)*( inv(M(q) * Mdi) * ∇q_Hd(q, p, θ) .+ J2*Mdi*p )
-        u_di = -T(1)*dot(G, 2*Mdi*p)
+        u_di = -T(2.5)*dot(G, 2*Mdi*p)
         return T(1)*dot( inv(G'*G)*G', Gu_es ) + u_di
     end
 end
