@@ -12,7 +12,7 @@ end
 
 function SOSPoly(n::Int, degree::Int)
     @polyvar q[1:n]
-    mono = monomials(q, 1:degree)
+    mono = monomials(q, 0:degree)
     m = length(mono)
     θ = glorot_uniform(Int(m*(m+1)/2))
     SOSPoly{typeof(q), typeof(mono), typeof(θ)}(n, degree, q, mono, θ)
