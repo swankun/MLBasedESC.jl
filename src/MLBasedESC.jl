@@ -16,8 +16,9 @@ using Random: randperm
 using Revise
 using SparseArrays
 
-# using Printf      will replace Formatting when Julia 1.6 is out
+using Printf      
 using Formatting
+using Random
 
 using DynamicPolynomials
 

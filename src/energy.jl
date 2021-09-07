@@ -110,10 +110,8 @@ function predict(Hd::EnergyFunction, x0::Vector, θ=Hd.θ, tf=Hd.hyper.time_hori
     Array( 
         OrdinaryDiffEq.solve(
             ODEProblem(
-                # (x,p,t) -> Hd.dynamics(x, u(x,p)),
-                (dx,x,p,t) -> Hd.dynamics(dx, x, u(x,p)),
-                # (x,p,t) -> Hd.dynamics(x,controller(Hd,x,p)),
-                # (dx,x,p,t) -> Hd.dynamics(dx, x, controller(Hd,x,p)),
+                (x,p,t) -> Hd.dynamics(x, u(x,p)),
+                # (dx,x,p,t) -> Hd.dynamics(dx, x, u(x,p)),
                 x0, 
                 (zero(eltype(x0)), tf), 
                 θ
@@ -122,38 +120,40 @@ function predict(Hd::EnergyFunction, x0::Vector, θ=Hd.θ, tf=Hd.hyper.time_hori
             u0=x0, 
             p=θ, 
             saveat=Hd.hyper.step_size, 
-            # sensealg=TrackerAdjoint()
-            # sensealg=ReverseDiffAdjoint()
-            sensealg=BacksolveAdjoint(autojacvec=ReverseDiffVJP(true))
+            sensealg=BacksolveAdjoint(autojacvec=ReverseDiffVJP(false))
         )
     )
 end
-function update!(Hd::EnergyFunction{T}, x0s::Vector{Array{T,1}}; verbose=false, η=0.001) where {T<:Real}
-    num_traj = length(x0s)
+function update!(Hd::EnergyFunction{T}, data::Vector{Array{T,1}}; verbose=false, η=0.001, max_iters=1000, batchsize=4) where {T<:Real}
     nn_dim   = last(last(Hd.net.inds).flat)
 
-    function _loss(θ)
-        losses = Zygote.bufferfrom( zeros(T, num_traj) )
-        for (j, x0) in enumerate(x0s)
-            losses[j] = Hd.loss( predict(Hd,x0,θ) )
-        end
-        mean_loss = sum(losses)/num_traj
-        reg_loss = Hd.hyper.regularization_coeff*sum(abs.(θ[1:nn_dim]))/nn_dim
-        return mean_loss + reg_loss, copy(losses), x0s
+    function _loss(x0s, θ)
+        N = length(x0s)
+        return +(
+            sum( map(x->Hd.loss(predict(Hd,x,θ)), x0s) ) / N,
+            Hd.hyper.regularization_coeff*sum(abs.(θ[1:nn_dim])) / nn_dim
+        )
     end
-    
-    adtype = GalacticOptim.AutoZygote()
-    optf = GalacticOptim.OptimizationFunction((x,p) -> _loss(x), adtype)
-    optfunc = GalacticOptim.instantiate_function(optf, Hd.θ, adtype, nothing)
-    optprob = GalacticOptim.OptimizationProblem(optfunc, Hd.θ)
-    res = GalacticOptim.solve(optprob,
-        ADAM(η),
-        cb=throttle( (args...)->_update_cb(args...; do_print=verbose), 0.5 ), 
-        maxiters=Hd.hyper.epochs_per_minibatch
-    )
-    if !any(isnan.(res.minimizer))
-        Hd.θ = res.minimizer
-        set_params(Hd.net, res.minimizer[1:nn_dim])
+    opt = ADAM(η)
+    epoch = 1
+    logexpr_epoch(n, l) = @sprintf("============= Epoch %4d: total_loss = %8.4e =============\n", n, l)
+    logexpr_batch(n, l) = @sprintf("Batch %4d | loss = %8.4e\n", n, l)
+    while epoch < max_iters
+        batch_count = 1
+        current_loss = _loss(data, Hd.θ)
+        print(logexpr_epoch(epoch, current_loss))
+        current_loss < 1e-4 && break
+        for batch in Iterators.partition(shuffle(data), batchsize)
+            gs = ReverseDiff.gradient(θ -> _loss(batch, θ), Hd.θ)
+            batchloss = _loss(batch, Hd.θ)
+            if !any(isnan.(gs))
+                Optimise.update!(opt, Hd.θ, gs)
+                set_params(Hd.net, Hd.θ[1:nn_dim])
+                print(logexpr_batch(batch_count, batchloss))
+                batch_count += 1
+            end
+        end
+        epoch += 1
     end
     nothing
 end
