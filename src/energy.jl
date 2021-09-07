@@ -157,27 +157,6 @@ function update!(Hd::EnergyFunction{T}, data::Vector{Array{T,1}}; verbose=false,
     end
     nothing
 end
-function _update_cb(ϕ, batch_loss, losses, x0s; do_print=false)
-    if any(isnan.(ϕ))
-        @warn("params are NaN, skipping training")
-        return true;
-    end
-    
-    if do_print
-        n = length(x0s[1])
-        fexpr = *(
-            "x0 = (",
-            join(["{$i:8.4f}, " for i=1:n])[1:end-2],
-            " )  |  loss = {$(n+1):.4f}  \n"
-        )
-        for (loss, x0) in zip(losses, x0s)
-            printfmt(fexpr, x0..., loss)
-        end
-    end
-
-    return false;
-end
-
 
 function params_to_npy(Hd::EnergyFunction, prefix::String)
     net = Hd.net
