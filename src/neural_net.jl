@@ -9,7 +9,9 @@ struct LayerParamIndices
     b    :: UnitRange{IndexType}
 end
 
-mutable struct NeuralNetwork{T<:Real, ChainType<:Union{Chain, FastChain}, LayerType<:Union{Dense, FastDense}, F1, F2, F3}
+abstract type FunctionApproxmiator end
+
+mutable struct NeuralNetwork{T<:Real, ChainType<:Union{Chain, FastChain}, LayerType<:Union{Dense, FastDense}, F1, F2, F3} <: FunctionApproxmiator
     depth  :: IndexType
     widths :: Vector{IndexType}
     σ      :: F1
@@ -143,7 +145,7 @@ end
 
 
 
-mutable struct PSDNeuralNetwork{N<:NeuralNetwork}
+mutable struct PSDNeuralNetwork{N<:NeuralNetwork} <: FunctionApproxmiator
     n::Int
     net::N
 end 
@@ -193,7 +195,7 @@ end
 
 
 
-mutable struct SkewSymNeuralNetwork{N<:NeuralNetwork}
+mutable struct SkewSymNeuralNetwork{N<:NeuralNetwork} <: FunctionApproxmiator
     n::Int
     net::N
     odd_function::Bool

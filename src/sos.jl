@@ -1,6 +1,6 @@
 export SOSPoly, SymmetricSOSPoly, gradient, set_params, hessian
 
-abstract type AbstractSOSPoly end
+abstract type AbstractSOSPoly <: FunctionApproxmiator end
 
 mutable struct SOSPoly{VA, BA, CO<:AbstractVector{<:Real}} <: AbstractSOSPoly
     dim::Int

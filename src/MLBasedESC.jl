@@ -27,5 +27,6 @@ include("neural_net.jl")
 include("sos.jl")
 include("energy.jl")
 include("energy_quadratic.jl")
+include("hamiltonian.jl")
 
 end
