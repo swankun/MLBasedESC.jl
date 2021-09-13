@@ -12,7 +12,7 @@ function Hamiltonian(mass::Matrix, potential::PE) where {PE<:Function}
     Hamiltonian(
         (q)->mass, 
         potential, 
-        Tuple(zeros(size(mass)...) for _=1:size(mass,1)),
+        [zeros(size(mass)...) for _=1:size(mass,1)],
         jac_pe     
     )
 end
@@ -20,7 +20,7 @@ function Hamiltonian(mass::MA, potential::PE) where {MA<:Function, PE<:Function}
     jac_mass(q) = begin
         n = length(q)
         jac = ReverseDiff.jacobian(Mf, q) 
-        map(i->reshape(jac[:,i], n, :), 1:n) |> Tuple
+        map(i->reshape(jac[:,i], n, :), 1:n)
     end
     jac_pe(q) = ReverseDiff.gradient(potential, q)
     Hamiltonian(
@@ -34,7 +34,7 @@ function Hamiltonian(mass::MA, potential::PE) where {MA<:FunctionApproxmiator, P
     jac_mass(q, θ=mass.θ) = begin
         n = length(q)
         jac = reduce(vcat, gradient(mass, q, θ))
-        map(i->reshape(jac[:,i], n, :), 1:n) |> Tuple
+        map(i->reshape(jac[:,i], n, :), 1:n)
     end
     jac_pe(q) = ReverseDiff.gradient(potential, q)
     Hamiltonian(
@@ -45,10 +45,10 @@ function Hamiltonian(mass::MA, potential::PE) where {MA<:FunctionApproxmiator, P
     )
 end
 function Hamiltonian(mass::MA, potential::PE) where {MA<:FunctionApproxmiator, PE<:FunctionApproxmiator}
-    jac_mass(q, θ=mass.θ) = begin
+    jac_mass(q, θ=mass.net.θ) = begin
         n = length(q)
         jac = reduce(vcat, gradient(mass, q, θ))
-        map(i->reshape(jac[:,i], n, :), 1:n) |> Tuple
+        map(i->reshape(jac[:,i], n, :), 1:n)
     end
     jac_pe(q, θ=potential.θ) = gradient(potential, q, θ)
     Hamiltonian(
@@ -61,4 +61,11 @@ end
 
 function (H::Hamiltonian)(q,p)
     return 1/2 * dot(p, H.mass(q)*p) + H.potential(q)
+end
+
+function gradient(H::Hamiltonian, q, p)
+    n = length(q)
+    jac = H.jac_mass(q)
+    gs = map(i->jac[i]*p[i], 1:n)
+    return 1/2 * (sum(gs)' * p) .+ gradient(H.potential, q)[:]
 end
