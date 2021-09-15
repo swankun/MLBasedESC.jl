@@ -1,4 +1,4 @@
-export Hamiltonian, gradient
+export Hamiltonian, gradient, isstatic
 
 struct Hamiltonian{isstatic,MA,PE,JM,JV}
     mass_inv::MA            # M⁻¹(q)
@@ -71,6 +71,8 @@ end
 function (H::Hamiltonian)(q,p)
     return 1/2 * dot(p, H.mass_inv(q)*p) + H.potential(q)
 end
+
+isstatic(H::Hamiltonian{B}) where {B} = B
 
 function gradient(H::Hamiltonian, q, p)
     n = length(q)
