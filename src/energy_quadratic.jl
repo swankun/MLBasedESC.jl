@@ -43,13 +43,13 @@ function QuadraticEnergyFunction(
     dim_q = (dim_input - length(dim_S1)) ÷ 2
     nin = length(dim_S1) + dim_q 
     Md_inv = PSDNeuralNetwork(T, dim_q, nin=nin, symmetric=symmetric, num_hidden_nodes=num_hidden_nodes)
-    # Vd = NeuralNetwork(T, 
-    #     [nin, num_hidden_nodes, num_hidden_nodes, 1],
-    #     symmetric=symmetric, 
-    #     fout=x->x.^2, dfout=x->2x
-    #     # fout=relu, dfout=drelu
-    # )
-    Vd = symmetric ? SymmetricSOSPoly(nin, 8) : SOSPoly(nin, 2)
+    Vd = NeuralNetwork(T, 
+        [nin, num_hidden_nodes, num_hidden_nodes, 1],
+        symmetric=symmetric, 
+        fout=x->x.^2, dfout=x->2x
+        # fout=relu, dfout=drelu
+    )
+    # Vd = symmetric ? SymmetricSOSPoly(nin, 8) : SOSPoly(nin, 2)
     J2 = [SkewSymNeuralNetwork(T, dim_q, nin=nin, num_hidden_nodes=num_hidden_nodes, symmetric=symmetric) for _=1:dim_q]
     θ = [ Md_inv.net.θ; Vd.θ; (Uk.net.θ for Uk in J2)...]
     _θind = Dict(

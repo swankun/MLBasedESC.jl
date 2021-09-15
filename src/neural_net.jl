@@ -35,8 +35,6 @@ function NeuralNetwork( T::Type,
     layers = Tuple([
         FastDense(
             widths[i-1], widths[i], i==depth+1 ? fout : σ,
-            # widths[i-1], widths[i], i==depth+1 ? relu : σ,
-            # widths[i-1], widths[i], i==depth+1 ? x->x.^2 : σ,
             initW=glorot_uniform, initb=glorot_uniform
         ) for i in 2:depth+1
     ])
@@ -72,13 +70,12 @@ NeuralNetwork(widths::Vector{Int}) = NeuralNetwork(Float32, widths)
 
 function (net::NeuralNetwork)(x, p=net.θ)
     net.chain(x, p)
-    # net.chain([1.0], p)
 end
 
 function Base.show(io::IO, net::NeuralNetwork{T,C,D}) where {T,C,D}
-    print(io, "NeuralNetwork{$(T),$(C),$(D)}, \n")
-    print(io, "widths = $(Int.(net.widths))"); print(io, ", \n")
-    print(io, "σ = "); show(io, net.σ); print(io, " ")
+    print(io, "NeuralNetwork{$(T),symmetric=$(_issymmetric(net))}")
+    print(io, ", widths = $(Int.(net.widths))")
+    print(io, ", σ = "); show(io, net.σ); print(io, " ")
 end
 
 
@@ -90,12 +87,10 @@ end
 
 function get_weights(net::NeuralNetwork, θ, layer::Integer)
     θ[ net.inds[layer].flat ][ net.inds[layer].W ]
-    # @view θ[ net.inds[layer].flat ][ net.inds[layer].W ]  # breaks ReverseDiff w.r.t θ
 end
 
 function get_biases(net::NeuralNetwork, θ, layer::Integer)
     θ[ net.inds[layer].flat ][ net.inds[layer].b ]
-    # @view θ[ net.inds[layer].flat ][ net.inds[layer].b ] # breaks ReverseDiff w.r.t θ
 end
 
 
@@ -123,7 +118,6 @@ Zygote.@nograd _issymmetric
 
 
 function gradient(net::NeuralNetwork, x, θ=net.θ)
-    fout = x->x.^2
     ∂NNx = identity.( 
         get_weights(net, θ, net.depth) * 
         prod(net.σ′.(_applychain(net, θ, i, x)) .* get_weights(net, θ, i) for i = net.depth-1:-1:1) 
@@ -131,8 +125,8 @@ function gradient(net::NeuralNetwork, x, θ=net.θ)
     if _issymmetric(net)
         ∂NNx = ∂NNx .* reduce(hcat, [fill(eltype(x)(2)*y, last(net.widths)) for y in x])
     end
+    fout = net.layers[end].σ
     if fout != identity
-        # return ∂NNx
         ∂NNx = net.dfout.(_applychain(net, θ, net.depth, x)) .* ∂NNx
     end
     return ∂NNx
@@ -174,9 +168,9 @@ function (S::PSDNeuralNetwork)(x, p=S.net.θ)
 end
 
 function Base.show(io::IO, S::PSDNeuralNetwork)
-    print(io, "$(S.n) × $(S.n) positive semidefinite matrix NeuralNetwork: ")
-    print(io, "widths = "); show(io, S.net.widths); print(io, ", ")
-    print(io, "σ = "); show(io, S.net.σ); print(io, " ")
+    print(io, "$(S.n)×$(S.n) PSDNeuralNetwork")
+    print(io, ", widths = "); show(io, S.net.widths);
+    print(io, ", σ = "); show(io, S.net.σ);
 end
 
 set_params(S::PSDNeuralNetwork, p::Vector{<:Real}) = set_params(S.net, p)

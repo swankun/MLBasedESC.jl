@@ -28,5 +28,6 @@ include("sos.jl")
 include("energy.jl")
 include("energy_quadratic.jl")
 include("hamiltonian.jl")
+include("ida_pbc.jl")
 
 end
