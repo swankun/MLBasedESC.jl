@@ -11,8 +11,8 @@ struct InterconnectionMatrix{isstatic,T,UK}
     end
 end
 
-function InterconnectionMatrix(uks::Vararg{F1,N}) where {F1<:FunctionApproxmiator, N}
-    uk_collection = eltype(uks)[]
+function InterconnectionMatrix(uks::Vararg{SkewSymNeuralNetwork,N}) where {N}
+    uk_collection = SkewSymNeuralNetwork[]
     ps = eltype(first(uks).net.θ)[]
     ps_index = Dict{Symbol,UnitRange{Int}}()
     prevlen = 0
@@ -32,7 +32,7 @@ function InterconnectionMatrix(uks::Vararg{Function,N}) where {N}
     uk_collection = Function[]
     ps = Float32[]
     ps_index = Dict{Symbol,UnitRange{Int}}()
-    prevlen = 1
+    prevlen = 0
     for (k, uk) in enumerate(uks)
         push!(uk_collection, uk)
         append!(ps, 0)
