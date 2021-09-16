@@ -78,8 +78,7 @@ function Base.show(io::IO, net::NeuralNetwork{T,C,D}) where {T,C,D}
     print(io, ", σ = "); show(io, net.σ); print(io, " ")
 end
 
-
-
+precisionof(net::NeuralNetwork{T}) where {T} = T
 
 function set_params(net::NeuralNetwork, p::Vector{<:Real})
     net.θ = p
@@ -92,9 +91,6 @@ end
 function get_biases(net::NeuralNetwork, θ, layer::Integer)
     θ[ net.inds[layer].flat ][ net.inds[layer].b ]
 end
-
-
-
 
 function _applychain(net::NeuralNetwork, θ, layers::Tuple, input)
     get_weights(net, θ, first(layers)+1) * 
@@ -114,9 +110,6 @@ function _issymmetric(net::NeuralNetwork)
 end
 Zygote.@nograd _issymmetric
 
-
-
-
 function gradient(net::NeuralNetwork, x, θ=net.θ)
     ∂NNx = identity.( 
         get_weights(net, θ, net.depth) * 
@@ -135,8 +128,6 @@ end
 function hessian(net::NeuralNetwork, x, θ=net.θ)
     ReverseDiff.jacobian(y->gradient(net,y,θ)[:], x)
 end
-
-
 
 
 mutable struct PSDNeuralNetwork{N<:NeuralNetwork} <: FunctionApproxmiator
@@ -188,7 +179,6 @@ function gradient(S::PSDNeuralNetwork, x, θ=S.net.θ)
 end
 
 
-
 mutable struct SkewSymNeuralNetwork{N<:NeuralNetwork} <: FunctionApproxmiator
     n::Int
     net::N
@@ -225,9 +215,9 @@ function (S::SkewSymNeuralNetwork)(x, p=S.net.θ)
 end
 
 function Base.show(io::IO, S::SkewSymNeuralNetwork)
-    print(io, "$(S.n) × $(S.n) positive semidefinite matrix NeuralNetwork: ")
-    print(io, "widths = "); show(io, S.net.widths); print(io, ", ")
-    print(io, "σ = "); show(io, S.net.σ); print(io, " ")
+    print(io, "$(S.n)×$(S.n) skew-symmetric NeuralNetwork")
+    print(io, ", widths = "); show(io, S.net.widths);
+    print(io, ", σ = "); show(io, S.net.σ)
 end
 
 set_params(S::SkewSymNeuralNetwork, p::Vector{<:Real}) = set_params(S.net, p)

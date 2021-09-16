@@ -65,7 +65,6 @@ function IDAPBCProblem(ham::Hamiltonian{true}, hamd::Hamiltonian{false}, input, 
         :mass_inv => 1 : length(hamd.mass_inv.net.θ), 
         :potential => length(hamd.mass_inv.net.θ)+1 : length(hamd.mass_inv.net.θ)+length(hamd.potential.θ)
     )
-    precisionof(net::NeuralNetwork{T}) where {T} = T
     inferred_precision = precisionof(hamd.mass_inv.net)
     if !isnothing(interconnection)
         interconnection::Vector{SkewSymNeuralNetwork}
