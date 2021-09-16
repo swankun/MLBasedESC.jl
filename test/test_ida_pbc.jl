@@ -22,7 +22,11 @@ function create_ida_pbc_problem()
     input_annihilator = hcat(1.0,1.0)
     ham = create_true_hamiltonian()
     hamd = create_learning_hamiltonian()
-    prob = IDAPBCProblem(ham, hamd, input, input_annihilator)
+    J2 = InterconnectionMatrix(
+        SkewSymNeuralNetwork(Float32, 2),
+        SkewSymNeuralNetwork(Float32, 2)
+    )
+    prob = IDAPBCProblem(ham, hamd, input, input_annihilator, J2)
 end
 
 function create_known_ida_pbc()

@@ -1,18 +1,18 @@
 export InterconnectionMatrix, IDAPBCProblem, pde_constraint_ke, pde_constraint_pe, controller
 
 struct InterconnectionMatrix{isstatic,T,UK}
-    uk_collection::UK
+    uk_collection::Vector{UK}
     ps::Vector{T}
     ps_index::Dict{Symbol,UnitRange{Int}}
     function InterconnectionMatrix{isstatic}(uk_collection, ps, ps_index) where {isstatic}
-        new{isstatic, eltype(ps), typeof(uk_collection)}(
+        new{isstatic, eltype(ps), eltype(uk_collection)}(
             uk_collection, ps, ps_index
         )
     end
 end
 
 function InterconnectionMatrix(uks::Vararg{SkewSymNeuralNetwork,N}) where {N}
-    uk_collection = SkewSymNeuralNetwork[]
+    uk_collection = typeof(first(uks))[]
     ps = eltype(first(uks).net.θ)[]
     ps_index = Dict{Symbol,UnitRange{Int}}()
     prevlen = 0
@@ -29,7 +29,7 @@ function InterconnectionMatrix(uks::Vararg{SkewSymNeuralNetwork,N}) where {N}
 end
 
 function InterconnectionMatrix(uks::Vararg{Function,N}) where {N}
-    uk_collection = Function[]
+    uk_collection = typeof(first(uks))[]
     ps = Float32[]
     ps_index = Dict{Symbol,UnitRange{Int}}()
     prevlen = 0
@@ -45,9 +45,28 @@ function InterconnectionMatrix(uks::Vararg{Function,N}) where {N}
     InterconnectionMatrix{true}(uk_collection, ps, ps_index)
 end
 
+function InterconnectionMatrix(uks::Vararg{Matrix{T},N}) where {T,N}
+    _func(q,_=nothing) = first(uks)
+    uk_collection = typeof(_func)[]
+    ps = T[]
+    ps_index = Dict{Symbol,UnitRange{Int}}()
+    prevlen = 0
+    for (k, uk) in enumerate(uks)
+        push!(uk_collection, _func)
+        append!(ps, 0)
+        thislen = 1
+        push!(ps_index, 
+            Symbol("interconnection_u",k) => 
+            prevlen+1+(k-1)*thislen : prevlen+k*thislen
+        )
+    end
+    InterconnectionMatrix{true}(uk_collection, ps, ps_index)
+end
+
 function (J2::InterconnectionMatrix)(q,p)
     sum(1/2*uk(q)*p[k] for (k,uk) in enumerate(J2.uk_collection))
 end
+Base.getindex(J2::InterconnectionMatrix, i::Int) = getindex(J2.uk_collection, i)
 
 struct IDAPBCProblem{T,H1,H2,J2}
     ham::H1
@@ -59,47 +78,52 @@ struct IDAPBCProblem{T,H1,H2,J2}
     ps_index::Dict{Symbol,UnitRange{Int}}
 end
 
-function IDAPBCProblem(ham::Hamiltonian{true}, hamd::Hamiltonian{false}, input, input_annihilator; interconnection=nothing)
+function IDAPBCProblem(ham::Hamiltonian{true}, hamd::Hamiltonian{false}, 
+    input, input_annihilator, interconnection::InterconnectionMatrix
+)
     ps = [hamd.mass_inv.net.θ; hamd.potential.θ]
     ps_index = Dict(
         :mass_inv => 1 : length(hamd.mass_inv.net.θ), 
         :potential => length(hamd.mass_inv.net.θ)+1 : length(hamd.mass_inv.net.θ)+length(hamd.potential.θ)
     )
     inferred_precision = precisionof(hamd.mass_inv.net)
-    if !isnothing(interconnection)
-        interconnection::Vector{SkewSymNeuralNetwork}
-        prevlen = length(hamd.mass_inv.net.θ) + length(hamd.potential.θ)
-        for (k, uk) in enumerate(interconnection)
-            thislen = length(uk.net.θ)
-            push!(ps, uk.net.θ)
-            push!(ps_index, 
-                Symbol("j2_u",k) => 
-                prevlen+1+(k-1)*thislen : prevlen+k*thislen
-            )
-        end
+    prevlen = length(ps)
+    append!(ps, interconnection.ps)
+    for (k, uk_ps_index) in enumerate(interconnection.ps_index)
+        thislen = length(uk_ps_index)
+        push!(ps_index, 
+            Symbol("j2_u",k) => 
+            prevlen .+ uk_ps_index.second
+        )
     end
     IDAPBCProblem{inferred_precision, typeof(ham), typeof(hamd), typeof(interconnection)}(
         ham, hamd, input, input_annihilator, interconnection, ps, ps_index)
 end
 
-function IDAPBCProblem(ham::Hamiltonian{true}, hamd::Hamiltonian{true}, input, input_annihilator; interconnection=nothing)
+function IDAPBCProblem(ham::Hamiltonian{true}, hamd::Hamiltonian{true}, 
+    input, input_annihilator, interconnection::InterconnectionMatrix
+)
     inferred_precision = eltype(hamd.mass_inv([0.]))
     ps = zeros(inferred_precision,2)
     ps_index = Dict(:mass_inv =>1:1, :potential=>2:2)
-    if !isnothing(interconnection)
-        interconnection::Vector{Function}
-        prevlen = 2
-        for (k, uk) in enumerate(interconnection)
-            thislen = 1
-            push!(ps, 0)
-            push!(ps_index, 
-                Symbol("j2_u",k) => 
-                prevlen+1+(k-1)*thislen : prevlen+k*thislen
-            )
-        end
+    prevlen = length(ps)
+    append!(ps, interconnection.ps)
+    for (k, uk_ps_index) in enumerate(interconnection.ps_index)
+        thislen = length(uk_ps_index)
+        push!(ps_index, 
+            Symbol("j2_u",k) => 
+            prevlen .+ uk_ps_index.second
+        )
     end
     IDAPBCProblem{inferred_precision, typeof(ham), typeof(hamd), typeof(interconnection)}(
         ham, hamd, input, input_annihilator, interconnection, ps, ps_index)
+end
+
+function IDAPBCProblem(ham::Hamiltonian{true}, hamd, input, input_annihilator)
+    nq = length(input)
+    J = zeros(eltype(input), (nq,nq))
+    J2 = InterconnectionMatrix( (J for _=1:nq)... )
+    IDAPBCProblem(ham, hamd, input, input_annihilator, J2)
 end
 
 function Base.show(io::IO, prob::IDAPBCProblem)
@@ -118,15 +142,10 @@ function pde_constraint_ke(prob::IDAPBCProblem, q, ps=prob.ps)
     
     nq = lastindex(q)
     map(1:nq) do j
-        pdevec = transpose(mass_inv_gs[j]) - massd*mass_inv*transpose(massd_inv_gs[j])
-        if !isnothing(prob.interconnection)
-            uk_ps = getindex(ps, prob.ps_index[Symbol("j2_u", j)])
-            uk = prob.interconnection[j](q, uk_ps)
-            sum(abs2, prob.input_annihilator * (pdevec + uk*massd_inv))
-        else
-            sum(abs2, prob.input_annihilator * pdevec)
-        end
-        
+        uk_ps = getindex(ps, prob.ps_index[Symbol("j2_u", j)])
+        uk = prob.interconnection[j](q, uk_ps)
+        sum(abs2, prob.input_annihilator * 
+            (transpose(mass_inv_gs[j]) - (massd*mass_inv)*transpose(massd_inv_gs[j]) + uk*massd_inv))
     end |> sum
 end
 
@@ -148,15 +167,11 @@ function controller(prob::IDAPBCProblem{T}; damping_gain=T(1.0)) where {T}
         mass_inv = prob.ham.mass_inv(q)
         massd_inv = prob.hamd.mass_inv(q)
         massd = inv(massd_inv)
-        Gu_es = gradient(prob.ham, q, p) .- (massd*mass_inv)*gradient(prob.hamd, q, p)
-        if !isnothing(prob.interconnection)
-            j2 = zeros(T,length(p),length(p))
-            for j in 1:lastindex(p)
-                j2 = j2 .+ 1/2*prob.interconnection[j](q)*p[j]
-            end
-            Gu_es = Gu_es .+ (j2*massd_inv*p)
-        end
+        J2 = sum(1/2*prob.interconnection[j](q)*p[j] for j in 1:lastindex(p))
+        Gu_es = gradient(prob.ham, q, p) .- (massd*mass_inv)*gradient(prob.hamd, q, p) .+ (J2*massd_inv*p)
+        
+        u_es = dot( inv(Gtop*G)*Gtop, Gu_es )
         u_di = -damping_gain*dot(G, 2*massd_inv*p)
-        return dot( inv(Gtop*G)*Gtop, Gu_es ) + u_di
+        return u_es + u_di
     end
 end 
