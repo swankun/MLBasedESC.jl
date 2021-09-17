@@ -152,7 +152,7 @@ end
 function pde_constraint_pe(prob::IDAPBCProblem, q, θ=prob.init_params; freeze_mass_ps=true)
     ped_ps = getindex(θ, prob.ps_index[:potential])
     ped_gs = vec(prob.hamd.jac_pe(q, ped_ps))
-    pe_gs = prob.ham.jac_pe(q)
+    pe_gs = prob.ham.jac_pe(q)[1:prob.hamd.mass_inv.n]
     massd_inv_ps = getindex(θ, prob.ps_index[:mass_inv])
     massd = ifelse(freeze_mass_ps, 
         inv(prob.hamd.mass_inv(q)), inv(prob.hamd.mass_inv(q,massd_inv_ps)))
@@ -181,7 +181,7 @@ function solve_sequential!(prob::IDAPBCProblem, paramvec, data, qdesired; batchs
     _loss_Md_gradient(q,θ) = first(Zygote.gradient(w->_loss_Md(q,w), θ))
     _loss_Vd(q,θ) = +(
         map(x->pde_constraint_pe(prob,x,θ,freeze_mass_ps=true), q) |> sum |> x->/(x,length(q)),
-        100*abs2(prob.hamd.potential(qdesired,θ))
+        100*abs2(prob.hamd.potential(qdesired,θ)[1])
     )
     _loss_Vd_gradient(q,θ) = ReverseDiff.gradient(w->_loss_Md(q,w), θ)
 
