@@ -120,7 +120,7 @@ function IDAPBCProblem(ham::Hamiltonian{true}, hamd::Hamiltonian{true},
 end
 
 function IDAPBCProblem(ham::Hamiltonian{true}, hamd, input, input_annihilator)
-    nq = length(input)
+    nq = hamd.mass_inv.n
     J = zeros(eltype(input), (nq,nq))
     J2 = InterconnectionMatrix( (J for _=1:nq)... )
     IDAPBCProblem(ham, hamd, input, input_annihilator, J2)
@@ -140,7 +140,7 @@ function pde_constraint_ke(prob::IDAPBCProblem, q, θ=prob.init_params)
     mass_inv = prob.ham.mass_inv(q)
     mass_inv_gs = prob.ham.jac_mass_inv(q)
     
-    nq = lastindex(q)
+    nq = prob.hamd.mass_inv.n
     map(1:nq) do j
         uk_ps = getindex(θ, prob.ps_index[Symbol("j2_u", j)])
         uk = prob.interconnection[j](q, uk_ps)
@@ -176,16 +176,14 @@ function controller(prob::IDAPBCProblem{T}; damping_gain=T(1.0)) where {T}
     end
 end 
 
-function solve_sequential!(prob::IDAPBCProblem, paramvec, data, qdesired; batchsize=128, η=0.001, maxiters=1000)
+function solve_sequential!(prob::IDAPBCProblem, paramvec, data, qdesired; batchsize=64, η=0.001, maxiters=1000)
     _loss_Md(q,θ) = map(x->pde_constraint_ke(prob,x,θ), q) |> sum |> x->/(x,length(q))
     _loss_Md_gradient(q,θ) = first(Zygote.gradient(w->_loss_Md(q,w), θ))
-    _loss_Vd(q,θ) = begin
-        +(
-            map(x->pde_constraint_pe(prob,x,θ,freeze_mass_ps=true), q) |> sum |> x->/(x,length(q)),
-            100*abs2(prob.hamd.potential(qdesired,θ))
-        )
-    end
-    _loss_Vd_gradient(q,θ) = first(Zygote.gradient(w->_loss_Md(q,w), θ))
+    _loss_Vd(q,θ) = +(
+        map(x->pde_constraint_pe(prob,x,θ,freeze_mass_ps=true), q) |> sum |> x->/(x,length(q)),
+        100*abs2(prob.hamd.potential(qdesired,θ))
+    )
+    _loss_Vd_gradient(q,θ) = ReverseDiff.gradient(w->_loss_Md(q,w), θ)
 
     dataloader = Data.DataLoader(data; batchsize=batchsize, shuffle=true)
     batches = round(Int, dataloader.imax / dataloader.batchsize, RoundUp)

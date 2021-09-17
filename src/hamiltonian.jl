@@ -68,8 +68,23 @@ function Hamiltonian(mass_inv::MA, potential::PE) where {MA<:FunctionApproxmiato
     )
 end
 
+function Hamiltonian(mass_inv::MA, potential::PE, input_jac) where {MA<:FunctionApproxmiator, PE<:FunctionApproxmiator}
+    jac_mass_inv(q, θ=mass_inv.net.θ) = begin
+        n = mass_inv.n
+        jac = reduce(vcat, gradient(mass_inv, q, θ))
+        map(i->reshape(jac[:,i], n, :)*input_jac(q), 1:n) 
+    end
+    jac_pe(q, θ=potential.θ) = gradient(potential, q, θ) * input_jac(q)
+    Hamiltonian{false}(
+        mass_inv, 
+        potential, 
+        jac_mass_inv,
+        jac_pe     
+    )
+end
+
 function (H::Hamiltonian)(q,p)
-    return 1/2 * dot(p, H.mass_inv(q)*p) + H.potential(q)
+    return 1/2 * dot(p, H.mass_inv(q)*p) + H.potential(q)[1]
 end
 
 isstatic(H::Hamiltonian{B}) where {B} = B
