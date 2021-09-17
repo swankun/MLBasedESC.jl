@@ -11,7 +11,7 @@ end
 
 abstract type FunctionApproxmiator end
 
-mutable struct NeuralNetwork{T<:Real, ChainType<:Union{Chain, FastChain}, LayerType<:Union{Dense, FastDense}, F1, F2, F3} <: FunctionApproxmiator
+struct NeuralNetwork{T<:Real, ChainType<:Union{Chain, FastChain}, LayerType<:Union{Dense, FastDense}, F1, F2, F3} <: FunctionApproxmiator
     depth  :: IndexType
     widths :: Vector{IndexType}
     σ      :: F1
@@ -25,7 +25,7 @@ end
 
 function NeuralNetwork( T::Type,
                         widths::Vector{Int}, 
-                        σ::Function=elu, 
+                        σ::Function=elu,
                         σ′::Function=delu ;
                         symmetric::Bool=false,
                         fout::Function=identity,
@@ -80,10 +80,6 @@ end
 
 precisionof(net::NeuralNetwork{T}) where {T} = T
 
-function set_params(net::NeuralNetwork, p::Vector{<:Real})
-    net.θ = p
-end
-
 function get_weights(net::NeuralNetwork, θ, layer::Integer)
     θ[ net.inds[layer].flat ][ net.inds[layer].W ]
 end
@@ -130,7 +126,7 @@ function hessian(net::NeuralNetwork, x, θ=net.θ)
 end
 
 
-mutable struct PSDNeuralNetwork{N<:NeuralNetwork} <: FunctionApproxmiator
+struct PSDNeuralNetwork{N<:NeuralNetwork} <: FunctionApproxmiator
     n::Int
     net::N
 end 
@@ -164,7 +160,6 @@ function Base.show(io::IO, S::PSDNeuralNetwork)
     print(io, ", σ = "); show(io, S.net.σ);
 end
 
-set_params(S::PSDNeuralNetwork, p::Vector{<:Real}) = set_params(S.net, p)
 get_weights(S::PSDNeuralNetwork, θ, layer::Integer) = get_weights(S.net, θ, layer)
 get_biases(S::PSDNeuralNetwork, θ, layer::Integer) = get_biases(S.net, θ, layer)
 
@@ -179,7 +174,7 @@ function gradient(S::PSDNeuralNetwork, x, θ=S.net.θ)
 end
 
 
-mutable struct SkewSymNeuralNetwork{N<:NeuralNetwork} <: FunctionApproxmiator
+struct SkewSymNeuralNetwork{N<:NeuralNetwork} <: FunctionApproxmiator
     n::Int
     net::N
     odd_function::Bool
@@ -220,7 +215,6 @@ function Base.show(io::IO, S::SkewSymNeuralNetwork)
     print(io, ", σ = "); show(io, S.net.σ)
 end
 
-set_params(S::SkewSymNeuralNetwork, p::Vector{<:Real}) = set_params(S.net, p)
 get_weights(S::SkewSymNeuralNetwork, θ, layer::Integer) = get_weights(S.net, θ, layer)
 get_biases(S::SkewSymNeuralNetwork, θ, layer::Integer) = get_biases(S.net, θ, layer)
 
