@@ -183,7 +183,7 @@ function solve_sequential!(prob::IDAPBCProblem, paramvec, data, qdesired; batchs
         map(x->pde_constraint_pe(prob,x,θ,freeze_mass_ps=true), q) |> sum |> x->/(x,length(q)),
         100*abs2(prob.hamd.potential(qdesired,θ)[1])
     )
-    _loss_Vd_gradient(q,θ) = ReverseDiff.gradient(w->_loss_Md(q,w), θ)
+    _loss_Vd_gradient(q,θ) = ReverseDiff.gradient(w->_loss_Vd(q,w), θ)
 
     dataloader = Data.DataLoader(data; batchsize=batchsize, shuffle=true)
     batches = round(Int, dataloader.imax / dataloader.batchsize, RoundUp)
