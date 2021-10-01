@@ -84,7 +84,7 @@ function Hamiltonian(mass_inv::MA, potential::PE, input_jac) where {MA<:Function
 end
 
 function (H::Hamiltonian)(q,p)
-    return 1/2 * dot(p, H.mass_inv(q)*p) + H.potential(q)[1]
+    return eltype(q)(1/2) * dot(p, H.mass_inv(q)*p) + H.potential(q)[1]
 end
 
 isstatic(H::Hamiltonian{B}) where {B} = B

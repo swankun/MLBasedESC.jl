@@ -213,7 +213,7 @@ end
 function solve_sequential!(prob::IDAPBCProblem, paramvec, data, qdesired; batchsize=64, η=0.001, maxiters=1000)
     ℓ1  = loss_massd
     ∂ℓ1 = ∂loss_massd(prob)
-    ℓ2(q,θ) = loss_ped(prob,q,θ) + abs2(prob.hamd.potential(qdesired,θ)[1])
+    ℓ2(q,θ) = loss_ped(prob,q,θ) + abs2(prob.hamd.potential(qdesired, getindex(θ, prob.ps_index[:potential]))[1])
     ∂ℓ2 = (q,θ) -> ReverseDiff.gradient(w->ℓ2(q,w), θ)
     batchgs = Vector{typeof(paramvec)}(undef, batchsize)
 
