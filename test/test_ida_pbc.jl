@@ -21,7 +21,8 @@ end
 
 function create_learning_hamiltonian()
     massd_inv = PSDNeuralNetwork(Float32, 2, nin=4)
-    vd = NeuralNetwork(Float32, [4,128,128,1])
+    # vd = NeuralNetwork(Float32, [4,128,128,1])
+    vd = SOSPoly(4, 2)
     Hamiltonian(massd_inv, vd, input_jacobian)
 end
 

@@ -10,13 +10,14 @@ mutable struct SOSPoly{VA, BA, CO<:AbstractVector{<:Real}} <: AbstractSOSPoly
     θ::CO
 end
 
-function SOSPoly(n::Int, degree::Int)
+function SOSPoly(n::Int, degrees::UnitRange{Int})
     @polyvar q[1:n]
-    mono = monomials(q, 0:degree)
+    mono = monomials(q, degrees)
     m = length(mono)
     θ = glorot_uniform(Int(m*(m+1)/2))
-    SOSPoly{typeof(q), typeof(mono), typeof(θ)}(n, degree, q, mono, θ)
+    SOSPoly{typeof(q), typeof(mono), typeof(θ)}(n, last(degrees), q, mono, θ)
 end
+SOSPoly(n::Int, degree::Int) = SOSPoly(n, 0:degree)
 
 function (P::SOSPoly)(x, θ=P.θ) 
     L = vec2tril(θ)
@@ -29,13 +30,17 @@ function coeff_matrix(P::SOSPoly, θ)
     return vec2tril(θ)
 end
 
+monsub(P::SOSPoly, x) = [v(P.vars=>x) for v in P.mono]
+function ∂mon∂q(P::SOSPoly, x)
+    ∂X = transpose(differentiate(P.mono, P.vars))
+    [d(P.vars=>x) for d in ∂X]
+end
+
 function gradient(P::SOSPoly, x, θ=P.θ)
     L = coeff_matrix(P, θ)
-    X = P.mono
-    v = L'*X
-    sos = dot(v, v)
-    expr = differentiate.(sos, P.vars)
-    val = reduce(hcat, p(P.vars=>x) for p in expr)
+    ∂X = ∂mon∂q(P,x)
+    expr = 2 * ∂X * (L*L') * monsub(P,x)
+    reduce(hcat, e for e in expr)
 end
 
 function hessian(P::SOSPoly, x, θ=P.θ)
