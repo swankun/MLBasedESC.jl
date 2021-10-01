@@ -18,7 +18,7 @@ function Hamiltonian(mass_inv::Matrix, potential::PE) where {PE<:Function}
     Hamiltonian{true}(
         (q,_=nothing)->mass_inv, 
         potential, 
-        (q,_=nothing)->[zeros(size(mass_inv)...) for _=1:size(mass_inv,1)],
+        (q,_=nothing)->[zeros(eltype(mass_inv), size(mass_inv)...) for _=1:size(mass_inv,1)],
         jac_pe     
     )
 end

@@ -2,7 +2,7 @@ using MLBasedESC
 using Test
 using LinearAlgebra
 
-const USE_J2 = false
+const USE_J2 = true
 
 function create_true_hamiltonian()
     I1 = 0.1f0
