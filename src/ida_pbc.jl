@@ -67,7 +67,7 @@ function InterconnectionMatrix(uks::Vararg{Matrix{T},N}) where {T,N}
 end
 
 function (J2::InterconnectionMatrix)(q,p)
-    sum(1/2*uk(q)*p[k] for (k,uk) in enumerate(J2.uk_collection))
+    sum(eltype(q)(1/2)*uk(q)*p[k] for (k,uk) in enumerate(J2.uk_collection))
 end
 Base.getindex(J2::InterconnectionMatrix, i::Int) = getindex(J2.uk_collection, i)
 
@@ -147,11 +147,11 @@ function controller(prob::IDAPBCProblem{T}; damping_gain=T(1.0)) where {T}
         mass_inv = prob.ham.mass_inv(q)
         massd_inv = prob.hamd.mass_inv(q)
         massd = inv(massd_inv)
-        J2 = sum(1/2*prob.interconnection[j](q)*p[j] for j in 1:lastindex(p))
+        J2 = sum(T(1/2)*prob.interconnection[j](q)*p[j] for j in 1:lastindex(p))
         Gu_es = gradient(prob.ham, q, p) .- (massd*mass_inv)*gradient(prob.hamd, q, p) .+ (J2*massd_inv*p)
         
         u_es = dot( inv(Gtop*G)*Gtop, Gu_es )
-        u_di = -damping_gain*dot(G, 2*massd_inv*p)
+        u_di = -damping_gain*dot(G, T(2)*massd_inv*p)
         return u_es + u_di
     end
 end 
