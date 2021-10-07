@@ -11,7 +11,7 @@ function create_true_hamiltonian()
     mass_inv = inv(diagm(vcat(I1, I2)))
     # pe(q) = m3*(cos(q[1]) - one(q[1]))
     pe(q) = m3*(q[1] - one(q[1]))
-    Hamiltonian(mass_inv, pe)
+    Hamiltonian(mass_inv, pe, input_jacobian)
 end
 
 function input_jacobian(x)
