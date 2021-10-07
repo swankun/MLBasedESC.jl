@@ -107,7 +107,7 @@ end
 function IDAPBCProblem(ham::Hamiltonian{true}, hamd::Hamiltonian{true}, 
     input, input_annihilator, interconnection::InterconnectionMatrix
 )
-    inferred_precision = eltype(hamd.mass_inv([0.]))
+    inferred_precision = eltype(hamd.mass_inv([0.]))    # TODO: Infer this in some other way
     init_params = zeros(inferred_precision,2)
     ps_index = Dict(:mass_inv =>1:1, :potential=>2:2)
     prevlen = length(init_params)
@@ -124,7 +124,7 @@ function IDAPBCProblem(ham::Hamiltonian{true}, hamd::Hamiltonian{true},
 end
 
 function IDAPBCProblem(ham::Hamiltonian{true}, hamd, input, input_annihilator)
-    nq = hamd.mass_inv.n
+    nq = isstatic(hamd) ? size(hamd.mass_inv([0.]),1) : hamd.mass_inv.n     # TODO: Infer this in some other way
     J = zeros(eltype(input), (nq,nq))
     J2 = InterconnectionMatrix( (J for _=1:nq)... )
     IDAPBCProblem(ham, hamd, input, input_annihilator, J2)
@@ -165,7 +165,7 @@ function loss_massd(prob::IDAPBCProblem, q, θ=prob.init_params)
     mass_inv = prob.ham.mass_inv(q)
     mass_inv_gs = prob.ham.jac_mass_inv(q)
     
-    nq = prob.hamd.mass_inv.n
+    nq = size(massd,1)
     map(1:nq) do j
         uk_ps = getindex(θ, prob.ps_index[Symbol("j2_u", j)])
         uk = prob.interconnection[j](q, uk_ps)
@@ -178,7 +178,7 @@ end
 function loss_ped(prob::IDAPBCProblem, q, θ=prob.init_params)
     ped_ps = getindex(θ, prob.ps_index[:potential])
     ped_gs = vec(prob.hamd.jac_pe(q, ped_ps))
-    pe_gs = prob.ham.jac_pe(q)[1:prob.hamd.mass_inv.n]
+    pe_gs = prob.ham.jac_pe(q)[:]
     massd_inv_ps = getindex(θ, prob.ps_index[:mass_inv])
     massd = inv(prob.hamd.mass_inv(q,massd_inv_ps))
     mass_inv = prob.ham.mass_inv(q)

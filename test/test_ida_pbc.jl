@@ -54,16 +54,20 @@ function create_known_ida_pbc()
     input = vcat(-1.0f0,1.0f0)
     input_annihilator = hcat(1.0f0,1.0f0)
     
+    mass_inv = inv(diagm(vcat(I1, I2)))
+    pe(q) = m3*(cos(q[1]) - one(q[1]))
+    ham = Hamiltonian(mass_inv, pe)
+
     massd = [a1 a2; a2 a3]
     massd_inv = inv(massd)
     ϕ(z) = 0.5f0*k1*z^2
     z(q) = q[2] + γ2*q[1]
-    pe(q) = I1*m3/(a1+a2)*cos(q[1]) + ϕ(z(q))
+    ped(q) = I1*m3/(a1+a2)*cos(q[1]) + ϕ(z(q))
 
-    ham = create_true_hamiltonian()
-    hamd = Hamiltonian(massd_inv, pe)
+    hamd = Hamiltonian(massd_inv, ped)
     prob = IDAPBCProblem(ham, hamd, input, input_annihilator)
 end
+
 
 function assemble_data()
     data = Vector{Float32}[]
