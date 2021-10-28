@@ -44,7 +44,7 @@ function Hamiltonian(mass_inv::MA, potential::PE, input_jac) where {MA<:Function
         jac = reduce(vcat, gradient(mass_inv, q, θ))
         map(i->reshape(jac[:,i], n, :)*input_jac(q), 1:n)
     end
-    jac_pe(q,_=nothing) = transpose(ReverseDiff.gradient(potential, q))
+    jac_pe(q,_=nothing) = transpose(ReverseDiff.gradient(potential, q)) * input_jac(q)
     Hamiltonian{false}(
         mass_inv,
         potential,
@@ -83,4 +83,10 @@ function gradient(H::Hamiltonian, q, p)
     jac = H.jac_mass_inv(q)
     gs = map(i->jac[i]*p[i], 1:N)
     return eltype(q)(1/2) * (sum(gs)' * p) .+ H.jac_pe(q)[1:N]
+end
+function gradient(H::Hamiltonian, q, p, θM, θV)
+    N = length(p)
+    jac = H.jac_mass_inv(q,θM)
+    gs = map(i->jac[i]*p[i], 1:N)
+    return eltype(q)(1/2) * (sum(gs)' * p) .+ H.jac_pe(q,θV)[1:N]
 end
