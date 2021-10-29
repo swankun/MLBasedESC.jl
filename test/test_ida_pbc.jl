@@ -3,7 +3,7 @@ using Test
 using LinearAlgebra
 using OrdinaryDiffEq
 
-const USE_J2 = true
+const USE_J2 = !true
 
 function create_true_hamiltonian()
     I1 = 0.0455f0
@@ -22,8 +22,8 @@ end
 
 function create_learning_hamiltonian()
     massd_inv = PSDNeuralNetwork(Float32, 2, nin=2)
-    # vd = NeuralNetwork(Float32, [4,128,128,1])
-    vd = SOSPoly(2, 1:3)
+    vd = NeuralNetwork(Float32, [2,128,128,1], symmetric=!true, fout=x->x.^2, dfout=x->eltype(x)(2)*x)
+    # vd = SOSPoly(2, 1:3)
     Hamiltonian(massd_inv, vd)
 end
 
@@ -62,12 +62,12 @@ function create_known_ida_pbc()
     massd = [a1 a2; a2 a3]
     massd_inv = inv(massd)
     ϕ(z) = 0.5f0*k1*z^2
-    # z(q) = q[2] + γ2*q[1]
-    # ped(q) = I1*m3/(a1+a2)*cos(q[1]) + ϕ(z(q))
-    z(q) = atan(q[4],q[3]) + γ2*atan(q[2],q[1])
-    ped(q) = I1*m3/(a1+a2)*q[1] + ϕ(z(q))
+    z(q) = q[2] + γ2*q[1]
+    ped(q) = I1*m3/(a1+a2)*cos(q[1]) + ϕ(z(q))
+    # z(q) = atan(q[4],q[3]) + γ2*atan(q[2],q[1])
+    # ped(q) = I1*m3/(a1+a2)*q[1] + ϕ(z(q))
 
-    hamd = Hamiltonian(massd_inv, ped, input_jacobian)
+    hamd = Hamiltonian(massd_inv, ped)
     prob = IDAPBCProblem(create_true_hamiltonian(), hamd, input, input_annihilator)
 end
 
@@ -117,7 +117,7 @@ unwrap(x::Matrix) = begin
 end
 
 function generate_trajectory(prob, x0, tf, θ=prob.init_params)
-    policy = controller(prob, θ, damping_gain=0.15f0)
+    policy = controller(prob, θ, damping_gain=10f0)
     M = prob.ham.mass_inv(0) |> inv
     # f(dx,x,p,t) = begin
     #    cq1, sq1, cq2, sq2, q1dot, q2dot = x
@@ -141,8 +141,8 @@ function generate_trajectory(prob, x0, tf, θ=prob.init_params)
         I2 = 0.00425f0
         m3 = 0.183f0*9.81f0
         effort = policy(x[1:2],momentum)
-        effort = clamp(effort, -1f0, 1f0)
-         b1 = b2 = 0.008f0
+        # effort = clamp(effort, -1f0, 1f0)
+         b1 = b2 = 0.00f0
         # dx[1] = -sq1*q1dot - ϵ*cq1*(sq1^2 + cq1^2 - 1)
         # dx[2] =  cq1*q1dot - ϵ*sq1*(sq1^2 + cq1^2 - 1)
         # dx[3] = -sq2*q2dot - ϵ*cq2*(sq2^2 + cq2^2 - 1)
@@ -154,6 +154,8 @@ function generate_trajectory(prob, x0, tf, θ=prob.init_params)
     end
     ode = ODEProblem(f, x0, (zero(tf), tf))
     sol = OrdinaryDiffEq.solve(ode, Tsit5(), saveat=tf/200)
-    (sol.t, transpose(Array(sol)))
+    solu = transpose(Array(sol))
+    ctrl = mapslices(x->1*u(x[1:2], inv(prob.ham.mass_inv(0))*x[3:4]), solu, dims=2)
+    (sol.t, solu, ctrl)
     # (sol.t, transpose(unwrap(Array(sol))))
 end
