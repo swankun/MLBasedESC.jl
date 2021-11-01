@@ -85,12 +85,18 @@ end
 function IDAPBCProblem(ham::Hamiltonian{true}, hamd::Hamiltonian{false}, 
     input, input_annihilator, interconnection::InterconnectionMatrix
 )
-    init_params = [hamd.mass_inv.net.θ; hamd.potential.θ]
+    if isa(hamd.mass_inv, FunctionApproxmiator)
+        θMd = hamd.mass_inv.net.θ
+        inferred_precision = precisionof(hamd.mass_inv.net)
+    else
+        inferred_precision = eltype(hamd.mass_inv([0.]))
+        θMd = inferred_precision[0.0]
+    end
+    init_params = [θMd; hamd.potential.θ]
     ps_index = Dict(
-        :mass_inv => 1 : length(hamd.mass_inv.net.θ), 
-        :potential => length(hamd.mass_inv.net.θ)+1 : length(hamd.mass_inv.net.θ)+length(hamd.potential.θ)
+        :mass_inv => 1 : length(θMd), 
+        :potential => length(θMd)+1 : length(θMd)+length(hamd.potential.θ)
     )
-    inferred_precision = precisionof(hamd.mass_inv.net)
     prevlen = length(init_params)
     append!(init_params, interconnection.init_params)
     for (k, uk_ps_index) in enumerate(interconnection.ps_index)
@@ -124,7 +130,7 @@ function IDAPBCProblem(ham::Hamiltonian{true}, hamd::Hamiltonian{true},
 end
 
 function IDAPBCProblem(ham::Hamiltonian{true}, hamd, input, input_annihilator)
-    nq = isstatic(hamd) ? size(hamd.mass_inv([0.]),1) : hamd.mass_inv.n     # TODO: Infer this in some other way
+    nq = isstatic(hamd) || !isa(hamd.mass_inv, FunctionApproxmiator) ? size(hamd.mass_inv([0.]),1) : hamd.mass_inv.n     # TODO: Infer this in some other way
     J = zeros(eltype(input), (nq,nq))
     J2 = InterconnectionMatrix( (J for _=1:nq)... )
     IDAPBCProblem(ham, hamd, input, input_annihilator, J2)
@@ -175,7 +181,13 @@ function loss_massd(prob::IDAPBCProblem, q, θ=prob.init_params)
             (transpose(mass_inv_gs[j]) - (massd*mass_inv)*transpose(massd_inv_gs[j]) + uk*massd_inv))
     end |> sum
 end
-∂loss_massd(prob::IDAPBCProblem) = (q,ps) -> first(Zygote.gradient(w->loss_massd(prob,q,w), ps))
+function ∂loss_massd(prob::IDAPBCProblem)
+    if !isa(prob.hamd.mass_inv, FunctionApproxmiator)
+        return (q,ps) -> zeros(eltype(ps), size(ps))
+    else
+        return (q,ps) -> first(Zygote.gradient(w->loss_massd(prob,q,w), ps))
+    end
+end
 
 function loss_ped(prob::IDAPBCProblem, q, θ=prob.init_params)
     ped_ps = getindex(θ, prob.ps_index[:potential])
@@ -215,7 +227,7 @@ end
 function solve_sequential!(prob::IDAPBCProblem, paramvec, data, qdesired; batchsize=64, η=0.001, maxiters=1000)
     ℓ1  = loss_massd
     ∂ℓ1 = ∂loss_massd(prob)
-    ℓ2(q,θ) = batchsize*loss_ped(prob,q,θ) + eltype(q)(1/batchsize)*abs2(prob.hamd.potential(qdesired, getindex(θ, prob.ps_index[:potential]))[1])
+    ℓ2(q,θ) = loss_ped(prob,q,θ) + eltype(q)(1/batchsize)*abs2(prob.hamd.potential(qdesired, getindex(θ, prob.ps_index[:potential]))[1])
     ∂ℓ2 = (q,θ) -> ReverseDiff.gradient(w->ℓ2(q,w), θ)
     batchgs = Vector{typeof(paramvec)}(undef, batchsize)
 

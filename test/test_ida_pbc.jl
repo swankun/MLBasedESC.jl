@@ -10,32 +10,47 @@ function create_true_hamiltonian()
     I2 = 0.00425f0
     m3 = 0.183f0*9.81f0
     mass_inv = inv(diagm(vcat(I1, I2)))
-    pe(q) = m3*(cos(q[1]) - one(q[1]))
-    # pe(q) = m3*(q[1] - one(q[1]))
-    Hamiltonian(mass_inv, pe)
+    pe(q) = -m3*q[1]
+    Hamiltonian(mass_inv, pe, input_jacobian)
 end
 
+input_mapping(x) = [one(eltype(x))-cos(x[1]), sin(x[1]), one(eltype(x))-cos(x[2]), sin(x[2])]
+
 function input_jacobian(x)
+    """
+    Input mapping f(x) = [1-cos(x1), sin(x1), 1-cos(x2), sin(x2)]
+    This is Jₓf
+    """
     T = eltype(x)
-    [-x[2] zero(T); x[1] zero(T); zero(T) -x[4]; zero(T) x[3]]
+    [x[2] zero(T); one(T)-x[1] zero(T); zero(T) x[4]; zero(T) one(T)-x[3]]
 end
 
 function create_learning_hamiltonian()
-    massd_inv = PSDNeuralNetwork(Float32, 2, nin=2)
-    vd = NeuralNetwork(Float32, [2,64,128,32,1], symmetric=!true, fout=x->x.^2, dfout=x->eltype(x)(2x))
-    # vd = SOSPoly(2, 1:3)
-    Hamiltonian(massd_inv, vd)
+    massd_inv = PSDNeuralNetwork(Float32, 2, nin=4)
+    # vd = NeuralNetwork(Float32, [2,64,128,32,1], symmetric=!true, fout=x->x.^2, dfout=x->eltype(x)(2x))
+    vd = SOSPoly(4, 1:2)
+    Hamiltonian(massd_inv, vd, input_jacobian)
+end
+
+function create_partial_learning_hamiltonian()
+    a1 = 1.0f0
+    a2 = -1.1f0
+    a3 = 2.0f0
+    massd = [a1 a2; a2 a3]
+    massd_inv = inv(massd)
+    vd = SOSPoly(4, 1:2)
+    Hamiltonian(massd_inv, vd, input_jacobian)
 end
 
 function create_ida_pbc_problem()
     input = vcat(-1.0f0,1.0f0)
     input_annihilator = hcat(1.0f0,1.0f0)
     ham = create_true_hamiltonian()
-    hamd = create_learning_hamiltonian()
+    hamd = create_partial_learning_hamiltonian()
     if USE_J2
         J2 = InterconnectionMatrix(
-            SkewSymNeuralNetwork(Float32, 2, nin=2),
-            SkewSymNeuralNetwork(Float32, 2, nin=2)
+            SkewSymNeuralNetwork(Float32, 2, nin=4),
+            SkewSymNeuralNetwork(Float32, 2, nin=4)
         )
         return IDAPBCProblem(ham, hamd, input, input_annihilator, J2)
     else
@@ -74,13 +89,13 @@ end
 
 function assemble_data()
     data = Vector{Float32}[]
-    dq = Float32(pi/20)
+    dq = Float32(pi/30)
     qmax = Float32(pi)
     q1range = range(-qmax, qmax, step=dq)
     q2range = range(-qmax, qmax, step=dq)
     for q1 in q1range
         for q2 in q2range
-            push!(data, [q1,q2])
+            push!(data, Float32[1-cos(q1),sin(q1),1-cos(q2),sin(q2)])
         end
     end
     return data
@@ -117,7 +132,7 @@ unwrap(x::Matrix) = begin
 end
 
 function generate_trajectory(prob, x0, tf, θ=prob.init_params)
-    policy = controller(prob, θ, damping_gain=0.01f0)
+    policy = controller(prob, θ, damping_gain=200f0)
     M = prob.ham.mass_inv(0) |> inv
     # f(dx,x,p,t) = begin
     #    cq1, sq1, cq2, sq2, q1dot, q2dot = x
@@ -136,13 +151,14 @@ function generate_trajectory(prob, x0, tf, θ=prob.init_params)
     #end
     f(dx,x,p,t) = begin
         q1, q2, q1dot, q2dot = x
+        qbar = input_mapping(x[1:2])
         momentum = M * [q1dot, q2dot]
         I1 = 0.0455f0
         I2 = 0.00425f0
         m3 = 0.183f0*9.81f0
-        effort = policy(x[1:2],momentum)
+        effort = policy(qbar,momentum)
         # effort = clamp(effort, -1f0, 1f0)
-         b1 = b2 = 0.00f0
+         b1 = b2 = 0.005f0
         # dx[1] = -sq1*q1dot - ϵ*cq1*(sq1^2 + cq1^2 - 1)
         # dx[2] =  cq1*q1dot - ϵ*sq1*(sq1^2 + cq1^2 - 1)
         # dx[3] = -sq2*q2dot - ϵ*cq2*(sq2^2 + cq2^2 - 1)
@@ -154,8 +170,20 @@ function generate_trajectory(prob, x0, tf, θ=prob.init_params)
     end
     ode = ODEProblem(f, x0, (zero(tf), tf))
     sol = OrdinaryDiffEq.solve(ode, Tsit5(), saveat=tf/200)
-    solu = transpose(Array(sol))
-    ctrl = mapslices(x->1*policy(x[1:2], inv(prob.ham.mass_inv(0))*x[3:4]), solu, dims=2)
-    (sol.t, solu, ctrl)
+    # solu = transpose(Array(sol))
+    ctrl = mapslices(x->policy(input_mapping(x[1:2]), inv(prob.ham.mass_inv(0))*x[3:4]), Array(sol), dims=1)
+    (sol, vec(ctrl))
     # (sol.t, transpose(unwrap(Array(sol))))
+end
+
+
+function test_hamd_gradient()
+    θ = Float32[pi*rand(), pi*rand()]
+    p = rand(Float32, 2)
+    q = input_mapping(θ)
+    isapprox(
+        ReverseDiff.gradient(x->prob.hamd(input_mapping(x),p), θ),
+        gradient(prob.hamd, q, p),
+        atol=1e-4
+    )
 end

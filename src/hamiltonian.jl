@@ -38,6 +38,16 @@ function Hamiltonian(mass_inv::MA, potential::PE, input_jac) where {MA<:Function
     )
 end
 
+function Hamiltonian(mass_inv::Matrix, potential::PE, input_jac) where {PE<:FunctionApproxmiator}
+    jac_pe(q, θ=potential.θ) = gradient(potential, q, θ) * input_jac(q)
+    Hamiltonian{false}(
+        (q,_=nothing)->mass_inv,
+        potential,
+        (q,_=nothing)->[zeros(eltype(mass_inv), size(mass_inv)...) for _=1:size(mass_inv,1)],
+        jac_pe
+    )
+end
+
 function Hamiltonian(mass_inv::MA, potential::PE, input_jac) where {MA<:FunctionApproxmiator, PE<:Function}
     jac_mass_inv(q, θ=mass_inv.θ) = begin
         n = length(q)
