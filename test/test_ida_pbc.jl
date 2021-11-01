@@ -22,7 +22,7 @@ end
 
 function create_learning_hamiltonian()
     massd_inv = PSDNeuralNetwork(Float32, 2, nin=2)
-    vd = NeuralNetwork(Float32, [2,128,128,1], symmetric=!true, fout=x->x.^2, dfout=x->eltype(x)(2)*x)
+    vd = NeuralNetwork(Float32, [2,64,128,32,1], symmetric=!true, fout=x->x.^2, dfout=x->eltype(x)(2x))
     # vd = SOSPoly(2, 1:3)
     Hamiltonian(massd_inv, vd)
 end
@@ -74,7 +74,7 @@ end
 
 function assemble_data()
     data = Vector{Float32}[]
-    dq = Float32(pi/30)
+    dq = Float32(pi/20)
     qmax = Float32(pi)
     q1range = range(-qmax, qmax, step=dq)
     q2range = range(-qmax, qmax, step=dq)
@@ -117,7 +117,7 @@ unwrap(x::Matrix) = begin
 end
 
 function generate_trajectory(prob, x0, tf, θ=prob.init_params)
-    policy = controller(prob, θ, damping_gain=10f0)
+    policy = controller(prob, θ, damping_gain=0.01f0)
     M = prob.ham.mass_inv(0) |> inv
     # f(dx,x,p,t) = begin
     #    cq1, sq1, cq2, sq2, q1dot, q2dot = x
@@ -155,7 +155,7 @@ function generate_trajectory(prob, x0, tf, θ=prob.init_params)
     ode = ODEProblem(f, x0, (zero(tf), tf))
     sol = OrdinaryDiffEq.solve(ode, Tsit5(), saveat=tf/200)
     solu = transpose(Array(sol))
-    ctrl = mapslices(x->1*u(x[1:2], inv(prob.ham.mass_inv(0))*x[3:4]), solu, dims=2)
+    ctrl = mapslices(x->1*policy(x[1:2], inv(prob.ham.mass_inv(0))*x[3:4]), solu, dims=2)
     (sol.t, solu, ctrl)
     # (sol.t, transpose(unwrap(Array(sol))))
 end
