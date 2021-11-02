@@ -1,8 +1,8 @@
-export SOSPoly, SymmetricSOSPoly, gradient, set_params, hessian
+export SOSPoly, SymmetricSOSPoly, gradient, hessian
 
 abstract type AbstractSOSPoly <: FunctionApproxmiator end
 
-mutable struct SOSPoly{VA, BA, CO<:AbstractVector{<:Real}} <: AbstractSOSPoly
+struct SOSPoly{VA, BA, CO<:AbstractVector{<:Real}} <: AbstractSOSPoly
     dim::Int
     degree::Int
     vars::VA
@@ -53,13 +53,9 @@ function hessian(P::SOSPoly, x, θ=P.θ)
     val = [v(P.vars=>x) for v in reduce(hcat, expr)]    
 end
 
-function set_params(P::AbstractSOSPoly, p::Vector{<:Real})
-    P.θ = p
-end
-
 nmons(n,d) = binomial(n+d-1,d)
 
-mutable struct SymmetricSOSPoly{VA, BA, CO} <: AbstractSOSPoly
+struct SymmetricSOSPoly{VA, BA, CO} <: AbstractSOSPoly
     dim::Int
     degree::Int
     vars::VA

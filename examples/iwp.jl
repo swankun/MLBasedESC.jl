@@ -1,6 +1,7 @@
 using MLBasedESC
-using Test
 using LinearAlgebra
+using OrdinaryDiffEq
+using Plots; pyplot(display=false)
 
 const USE_J2 = !true
 
@@ -37,10 +38,8 @@ function create_learning_hamiltonian()
 end
 
 function create_partial_learning_hamiltonian()
-    a1 = 1.0f0
-    a2 = -1.1f0
-    a3 = 2.0f0
-    massd = [a1 a2; a2 a3]
+    a1,a2,a3 = (0.001f0, -0.002f0, 0.005f0)
+    @show massd = [a1 a2; a2 a3]
     massd_inv = inv(massd)
     vd = SOSPoly(4, 1:2)
     Hamiltonian(massd_inv, vd, input_jacobian)
@@ -50,7 +49,7 @@ function create_ida_pbc_problem()
     input = vcat(-1.0f0,1.0f0)
     input_annihilator = hcat(1.0f0,1.0f0)
     ham = create_true_hamiltonian()
-    hamd = create_learning_hamiltonian()
+    hamd = create_partial_learning_hamiltonian()
     if USE_J2
         J2 = InterconnectionMatrix(
             SkewSymNeuralNetwork(Float32, 2, nin=4),
@@ -66,10 +65,8 @@ function create_known_ida_pbc()
     I1 = 0.0455f0
     I2 = 0.00425f0
     m3 = 0.183f0*9.81f0
-    a1 = 1.0f0
-    a2 = -1.1f0
-    a3 = 2.0f0
-    k1 = 0.0001f0
+    a1,a2,a3 = (0.001f0, -0.002f0, 0.005f0)
+    k1 = 0.5f0
     γ2 = -I1*(a2+a3)/(I2*(a1+a2))
     input = vcat(-1.0f0,1.0f0)
     input_annihilator = hcat(1.0f0,1.0f0)

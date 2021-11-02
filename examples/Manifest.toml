@@ -93,12 +93,6 @@ git-tree-sha1 = "1289b57e8cf019aede076edab0587eb9644175bd"
 uuid = "9e28174c-4ba2-5203-b857-d8d62c4213ee"
 version = "1.0.2"
 
-[[BinaryProvider]]
-deps = ["Libdl", "Logging", "SHA"]
-git-tree-sha1 = "ecdec412a9abc8db54c0efc5548c64dfce072058"
-uuid = "b99e7846-7c00-51b0-8f62-c81ae34c0232"
-version = "0.5.10"
-
 [[BitTwiddlingConvenienceFunctions]]
 deps = ["Static"]
 git-tree-sha1 = "bc1317f71de8dce26ea67fcdf7eccc0d0693b75b"
@@ -880,12 +874,6 @@ git-tree-sha1 = "575644e3c05b258250bb599e57cf73bbf1062901"
 uuid = "b8f27783-ece8-5eb3-8dc8-9495eed66fee"
 version = "0.9.22"
 
-[[MathProgBase]]
-deps = ["LinearAlgebra", "SparseArrays"]
-git-tree-sha1 = "9abbe463a1e9fc507f12a69e7f29346c2cdc472c"
-uuid = "fdba3010-5040-5b88-9595-932c9decdf73"
-version = "0.7.8"
-
 [[MbedTLS]]
 deps = ["Dates", "MbedTLS_jll", "Random", "Sockets"]
 git-tree-sha1 = "1c38e51c3d08ef2278062ebceade0e46cefc96fe"
@@ -933,18 +921,6 @@ version = "1.0.2"
 
 [[Mmap]]
 uuid = "a63ad114-7e13-5084-954f-fe012c677804"
-
-[[Mosek]]
-deps = ["Libdl", "Pkg", "Printf", "SparseArrays", "WinReg"]
-git-tree-sha1 = "f7c2c7ff998dcc378587bda88dababb5783dda57"
-uuid = "6405355b-0ac2-5fba-af84-adbd65488c0e"
-version = "1.2.1"
-
-[[MosekTools]]
-deps = ["MathOptInterface", "Mosek", "Printf"]
-git-tree-sha1 = "56f7c254a9d3769bda929e05f1db2d19d8aa3375"
-uuid = "1ec41992-ff65-5c91-ac43-2df89e9693a4"
-version = "0.9.4"
 
 [[MozillaCACerts_jll]]
 uuid = "14a3606d-f60d-562e-9121-12d972cd8159"
@@ -1022,18 +998,6 @@ git-tree-sha1 = "e9ffc92217b8709e0cf7b8808f6223a4a0936c95"
 uuid = "8913a72c-1f9b-4ce2-8d82-65094dcecaec"
 version = "0.3.11"
 
-[[OSQP]]
-deps = ["BinaryProvider", "Libdl", "LinearAlgebra", "MathOptInterface", "MathProgBase", "OSQP_jll", "SparseArrays"]
-git-tree-sha1 = "1231412a185b8c160111bdfa0c186108e2b5c049"
-uuid = "ab2f91bb-94b4-55e3-9ba0-7f65df51de79"
-version = "0.6.1"
-
-[[OSQP_jll]]
-deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg"]
-git-tree-sha1 = "ae1ca9707f7e8eb4805e83bad42af90fde780663"
-uuid = "9c4f68bf-6205-5545-a508-2878b064d984"
-version = "0.6.2+0"
-
 [[Observables]]
 git-tree-sha1 = "fe29afdef3d0c4a8286128d4e45cc50621b1e43d"
 uuid = "510215fc-4207-5dde-b226-833fc4488ee2"
@@ -1050,10 +1014,6 @@ deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg"]
 git-tree-sha1 = "7937eda4681660b4d6aeeecc2f7e1c81c8ee4e2f"
 uuid = "e7412a2a-1a6e-54c0-be00-318e2571c051"
 version = "1.3.5+0"
-
-[[OpenBLAS_jll]]
-deps = ["Artifacts", "CompilerSupportLibraries_jll", "Libdl"]
-uuid = "4536629a-c528-5b80-bd46-f80d51c5b363"
 
 [[OpenLibm_jll]]
 deps = ["Artifacts", "Libdl"]
@@ -1303,24 +1263,6 @@ deps = ["ExprTools", "SHA", "Serialization"]
 git-tree-sha1 = "cdc1e4278e91a6ad530770ebb327f9ed83cf10c4"
 uuid = "7e49a35a-f44a-4d26-94aa-eba1b4ca6b47"
 version = "0.5.3"
-
-[[SCS]]
-deps = ["BinaryProvider", "Libdl", "LinearAlgebra", "MathOptInterface", "MathProgBase", "Requires", "SCS_GPU_jll", "SCS_jll", "SparseArrays"]
-git-tree-sha1 = "efc1cf417dffb455b74a3d48857ae418098fc8a1"
-uuid = "c946c3f1-0d1f-5ce8-9dea-7daa1f7e2d13"
-version = "0.7.1"
-
-[[SCS_GPU_jll]]
-deps = ["Artifacts", "JLLWrappers", "Libdl", "OpenBLAS_jll", "Pkg"]
-git-tree-sha1 = "a96402e3b494a8bbec61b1adb86d4be04112c646"
-uuid = "af6e375f-46ec-5fa0-b791-491b0dfa44a4"
-version = "2.1.4+0"
-
-[[SCS_jll]]
-deps = ["Artifacts", "JLLWrappers", "Libdl", "OpenBLAS_jll", "Pkg"]
-git-tree-sha1 = "66c07568ecec96260aaac194ee1e5ee8df62f386"
-uuid = "f4f2fc5b-1d94-523c-97ea-2ab488bedf4b"
-version = "2.1.4+0"
 
 [[SHA]]
 uuid = "ea8e919c-243c-51af-8825-aaa63cd721ce"
@@ -1611,12 +1553,6 @@ deps = ["Colors", "Dates", "Observables", "OrderedCollections"]
 git-tree-sha1 = "80661f59d28714632132c73779f8becc19a113f2"
 uuid = "cc8bc4a8-27d6-5769-a93b-9d913e69aa62"
 version = "0.6.4"
-
-[[WinReg]]
-deps = ["Test"]
-git-tree-sha1 = "808380e0a0483e134081cc54150be4177959b5f4"
-uuid = "1b915085-20d7-51cf-bf83-8f477d6f5128"
-version = "0.3.1"
 
 [[XML2_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Libiconv_jll", "Pkg", "Zlib_jll"]
