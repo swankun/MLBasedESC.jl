@@ -159,7 +159,7 @@ function controller(prob::IDAPBCProblem{T}, θ=prob.init_params; damping_gain=T(
         Gu_es = gradient(prob.ham, q, p) .- 
             (massd*mass_inv)*gradient(prob.hamd, q, p, massd_inv_ps, ped_ps) .+ (J2*massd_inv*p)
         u_es = dot( inv(Gtop*G)*Gtop, Gu_es )
-        u_di = -damping_gain*dot(G, T(2)*massd_inv*p)
+        u_di = -damping_gain*dot(G, T(1)*massd_inv*p)
         return u_es + u_di
     end
 end 
@@ -240,7 +240,7 @@ function solve_sequential!(prob::IDAPBCProblem, paramvec, data, qdesired; batchs
 
     nepoch = 0; 
     train_loss = 1/length(data) * pmap(x->ℓ1(prob,x,paramvec), data)
-    while nepoch < maxiters && train_loss > 1e-4
+    while nepoch < maxiters && train_loss > 1e-6
         estatus("Md", nepoch, train_loss)
         nbatch = 1
         for batch in dataloader
@@ -263,7 +263,7 @@ function solve_sequential!(prob::IDAPBCProblem, paramvec, data, qdesired; batchs
     nepoch = 0; 
     train_loss = 1/length(data) * pmap(x->ℓ2(x,paramvec), data)
     optimizer = ADAM(η)
-    while nepoch < maxiters && train_loss > 1e-4
+    while nepoch < maxiters && train_loss > 1e-6
         estatus("Vd", nepoch, train_loss)
         nbatch = 1
         for batch in dataloader
