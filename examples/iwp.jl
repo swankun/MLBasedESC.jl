@@ -141,9 +141,9 @@ function generate_trajectory(prob, x0, tf, θ=prob.init_params; umax=eltype(x0)(
     (sol, ctrl)
 end
 function generate_true_trajectory(prob, x0, tf, umax=eltype(x0)(Inf); ps=(3f0, 30f0, 0.001f0, 0.1f0))
-    I1 = 0.1f0#0.0455f0
-    I2 = 0.2f0#0.00425f0
-    m3 = 10f0#0.183f0*9.81f0
+    I1 = 0.0455f0
+    I2 = 0.00425f0
+    m3 = 0.183f0*9.81f0
     b1 = b2 = 0.0f0
     M = diagm(vcat(I1,I2))
     # policy = controller(prob, θ, damping_gain=Kv)
@@ -156,7 +156,7 @@ function generate_true_trajectory(prob, x0, tf, umax=eltype(x0)(Inf); ps=(3f0, 3
         γ1, γ2, kp, kv = ps
         qhat = q2 + γ2*q1
         qhatdot = q2dot + γ2*q1dot
-        effort = γ1*sin(q1) + kp*sin(qhat) - kv*qhatdot
+        effort = γ1*sin(q1) + kp*(qhat) - kv*qhatdot
         effort = clamp(effort, -umax, umax)
 
         dx[1] = q1dot
@@ -165,7 +165,7 @@ function generate_true_trajectory(prob, x0, tf, umax=eltype(x0)(Inf); ps=(3f0, 3
         dx[4] = effort/I2 - b2/I2*q2dot
     end
     ode = ODEProblem{true}(f!, x0, (zero(tf), tf))
-    sol = OrdinaryDiffEq.solve(ode, Tsit5(), saveat=tf/200)
+    sol = OrdinaryDiffEq.solve(ode, BS5(), reltol=1e-6, abstol=1e-8, saveat=tf/200)
     # ctrl = mapslices(x->u(input_mapping(x[1:2]), M*x[3:4]), Array(sol), dims=1) |> vec
     # (sol, ctrl)
 end
