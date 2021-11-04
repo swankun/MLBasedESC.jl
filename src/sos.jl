@@ -3,20 +3,22 @@ export IWPSOSPoly
 
 abstract type AbstractSOSPoly <: FunctionApproxmiator end
 
-struct SOSPoly{VA, BA, CO<:AbstractVector{<:Real}} <: AbstractSOSPoly
+struct SOSPoly{VA, BA, BA2, CO<:AbstractVector{<:Real}} <: AbstractSOSPoly
     dim::Int
     degree::Int
     vars::VA
     mono::BA
+    ∇x_mono::BA2
     θ::CO
 end
 
 function SOSPoly(n::Int, degrees::UnitRange{Int})
     @polyvar q[1:n]
     mono = monomials(q, degrees)
+    ∇x_mono = differentiate(mono, q)
     m = length(mono)
     θ = glorot_uniform(Int(m*(m+1)/2))
-    SOSPoly{typeof(q), typeof(mono), typeof(θ)}(n, last(degrees), q, mono, θ)
+    SOSPoly{typeof(q), typeof(mono), typeof(∇x_mono), typeof(θ)}(n, last(degrees), q, mono, ∇x_mono, θ)
 end
 SOSPoly(n::Int, degree::Int) = SOSPoly(n, 0:degree)
 
@@ -33,14 +35,13 @@ end
 
 monsub(P::SOSPoly, x) = [v(P.vars=>x) for v in P.mono]
 function ∂mon∂q(P::SOSPoly, x)
-    ∂X = transpose(differentiate(P.mono, P.vars))
-    [d(P.vars=>x) for d in ∂X]
+    [d(P.vars=>x) for d in P.∇x_mono]
 end
 
 function gradient(P::SOSPoly, x, θ=P.θ)
     L = coeff_matrix(P, θ)
     ∂X = ∂mon∂q(P,x)
-    expr = 2 * ∂X * (L*L') * monsub(P,x)
+    expr = 2 * ∂X' * (L*L') * monsub(P,x)
     transpose(expr)
     # reduce(hcat, e for e in expr)
 end

@@ -21,5 +21,6 @@ include("neural_net.jl")
 include("sos.jl")
 include("hamiltonian.jl")
 include("ida_pbc.jl")
+include("loss.jl")
 
 end

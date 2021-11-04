@@ -163,8 +163,7 @@ function controller(prob::IDAPBCProblem{T}, θ=prob.init_params; damping_gain=T(
         return u_es + u_di
     end
 end 
-
-
+#=
 function loss_massd(prob::IDAPBCProblem, q, θ=prob.init_params)
     massd_inv_ps = getindex(θ, prob.ps_index[:mass_inv])
     massd_inv = prob.hamd.mass_inv(q, massd_inv_ps)
@@ -322,3 +321,4 @@ function solve!(prob::IDAPBCProblem, paramvec, data, qdesired; batchsize=64, η=
     estatus("PDE", nepoch, 1/length(data) * pmap(x->ℓ1(prob,x,paramvec)+ℓ2(x,paramvec), data))
     GC.gc()
 end
+=#

@@ -55,5 +55,11 @@ function vec2tril(v::AbstractVector, ::Bool)
     diag_ind = [Int(i*(i-1)/2) for i=2:M]
     sum( [diagm(-i-1 => getindex(v, diag_ind[1+i:end] .- i)) for i=0:M-1] )
 end
-
-
+function tril2vec(Q::Matrix)
+    N = size(Q,1)
+    denseidx = filter(collect(Iterators.product(1:N, 1:N))) do x
+        first(x) <= last(x)
+    end
+    return [Q[CartesianIndex(i,j)] for (i,j) in denseidx]
+end
+tril2vec(L::LowerTriangular) = tril2vec(L.data)
