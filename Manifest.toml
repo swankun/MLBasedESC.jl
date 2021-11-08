@@ -22,9 +22,9 @@ uuid = "0dad84c5-d112-42e6-8d28-ef12dabb789f"
 
 [[ArrayInterface]]
 deps = ["Compat", "IfElse", "LinearAlgebra", "Requires", "SparseArrays", "Static"]
-git-tree-sha1 = "426050a30c2cda1969510e92d5c5b52735f41c7d"
+git-tree-sha1 = "e527b258413e0c6d4f66ade574744c94edef81f8"
 uuid = "4fba245c-0d91-5ea0-9b3e-6abc04ee57a9"
-version = "3.1.39"
+version = "3.1.40"
 
 [[Artifacts]]
 uuid = "56f22d72-fd6d-98f1-02f0-08ddc0907c33"
@@ -107,6 +107,12 @@ version = "3.40.0"
 deps = ["Artifacts", "Libdl"]
 uuid = "e66e0078-7015-5450-92f7-15fbd957f2ae"
 
+[[Convex]]
+deps = ["LinearAlgebra", "MathProgBase", "OrderedCollections", "SparseArrays"]
+git-tree-sha1 = "ae07311d4b849473a9e3a67121a922f9b9efeb6d"
+uuid = "f65535da-76fb-5f13-bab9-19810c17039a"
+version = "0.12.4"
+
 [[DataAPI]]
 git-tree-sha1 = "cc70b17275652eb47bc9e5f81635981f13cea5c8"
 uuid = "9a962f9c-6df0-11e9-0e5d-c546b8b5ee8a"
@@ -133,10 +139,10 @@ uuid = "163ba53b-c6d8-5494-b064-1a9d43ac40c5"
 version = "1.0.3"
 
 [[DiffRules]]
-deps = ["NaNMath", "Random", "SpecialFunctions"]
-git-tree-sha1 = "7220bc21c33e990c14f4a9a319b1d242ebc5b269"
+deps = ["LogExpFunctions", "NaNMath", "Random", "SpecialFunctions"]
+git-tree-sha1 = "3287dacf67c3652d3fed09f4c12c187ae4dbb89a"
 uuid = "b552c78f-8df3-52c6-915a-8e097449b14b"
-version = "1.3.1"
+version = "1.4.0"
 
 [[Distributed]]
 deps = ["Random", "Serialization", "Sockets"]
@@ -192,9 +198,9 @@ version = "0.4.2"
 
 [[ForwardDiff]]
 deps = ["CommonSubexpressions", "DiffResults", "DiffRules", "LinearAlgebra", "NaNMath", "Preferences", "Printf", "Random", "SpecialFunctions", "StaticArrays"]
-git-tree-sha1 = "63777916efbcb0ab6173d09a658fb7f2783de485"
+git-tree-sha1 = "ef3fec65f9db26fa2cf8f4133c697c5b7ce63c1d"
 uuid = "f6369f11-7733-5829-9624-2563aa707210"
-version = "0.10.21"
+version = "0.10.22"
 
 [[FunctionWrappers]]
 git-tree-sha1 = "241552bc2209f0fa068b6415b1942cc0aa486bcc"
@@ -336,6 +342,12 @@ version = "0.5.9"
 deps = ["Base64"]
 uuid = "d6f4376e-aef5-505a-96c1-9c027394607a"
 
+[[MathProgBase]]
+deps = ["LinearAlgebra", "SparseArrays"]
+git-tree-sha1 = "9abbe463a1e9fc507f12a69e7f29346c2cdc472c"
+uuid = "fdba3010-5040-5b88-9595-932c9decdf73"
+version = "0.7.8"
+
 [[MbedTLS_jll]]
 deps = ["Artifacts", "Libdl"]
 uuid = "c8ffd9c3-330d-5841-b78e-0817d7145fa1"
@@ -354,6 +366,12 @@ version = "1.0.2"
 
 [[Mmap]]
 uuid = "a63ad114-7e13-5084-954f-fe012c677804"
+
+[[Mosek]]
+deps = ["Libdl", "Pkg", "Printf", "SparseArrays", "WinReg"]
+git-tree-sha1 = "f7c2c7ff998dcc378587bda88dababb5783dda57"
+uuid = "6405355b-0ac2-5fba-af84-adbd65488c0e"
+version = "1.2.1"
 
 [[MozillaCACerts_jll]]
 uuid = "14a3606d-f60d-562e-9121-12d972cd8159"
@@ -564,6 +582,12 @@ uuid = "cf7118a7-6976-5b1a-9a39-7adc72f591a4"
 
 [[Unicode]]
 uuid = "4ec0a83e-493e-50e2-b9ac-8f72acf5a8f5"
+
+[[WinReg]]
+deps = ["Test"]
+git-tree-sha1 = "808380e0a0483e134081cc54150be4177959b5f4"
+uuid = "1b915085-20d7-51cf-bf83-8f477d6f5128"
+version = "0.3.1"
 
 [[ZipFile]]
 deps = ["Libdl", "Printf", "Zlib_jll"]

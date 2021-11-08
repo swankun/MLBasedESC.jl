@@ -1,6 +1,4 @@
-export InterconnectionMatrix, IDAPBCProblem, params, controller, 
-    loss_massd, ∂loss_massd, loss_ped, ∂loss_ped, solve_sequential!, solve!,
-    pmap, pmap!
+export InterconnectionMatrix, IDAPBCProblem, params, controller
 
 
 struct InterconnectionMatrix{isstatic,T,UK}

@@ -10,6 +10,8 @@ using Random: randperm
 using Revise
 using SparseArrays
 
+using Convex, MosekTools
+
 using Printf      
 using Formatting
 using Random

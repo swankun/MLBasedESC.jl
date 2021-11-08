@@ -1,5 +1,11 @@
 # This file is machine-generated - editing it directly is not advised
 
+[[AMD]]
+deps = ["Libdl", "LinearAlgebra", "SparseArrays", "Test"]
+git-tree-sha1 = "fc66ffc5cff568936649445f58a55b81eaf9592c"
+uuid = "14f7f29c-3bd6-536c-9a0b-7339e30b5a3e"
+version = "0.4.0"
+
 [[AbstractFFTs]]
 deps = ["LinearAlgebra"]
 git-tree-sha1 = "485ee0867925449198280d4af84bdb46a2a404d0"
@@ -252,6 +258,12 @@ deps = ["StaticArrays"]
 git-tree-sha1 = "9f02045d934dc030edad45944ea80dbd1f0ebea7"
 uuid = "d38c429a-6771-53c6-b99e-75d170b6e991"
 version = "0.5.7"
+
+[[Convex]]
+deps = ["AbstractTrees", "BenchmarkTools", "LDLFactorizations", "LinearAlgebra", "MathOptInterface", "OrderedCollections", "SparseArrays", "Test"]
+git-tree-sha1 = "80bc67ed8b7df15595e7a38816b41e76a821a287"
+uuid = "f65535da-76fb-5f13-bab9-19810c17039a"
+version = "0.14.16"
 
 [[CoordinateTransformations]]
 deps = ["LinearAlgebra", "StaticArrays"]
@@ -692,6 +704,12 @@ git-tree-sha1 = "f6250b16881adf048549549fba48b1161acdac8c"
 uuid = "c1c5ebd0-6772-5130-a774-d5fcae4a789d"
 version = "3.100.1+0"
 
+[[LDLFactorizations]]
+deps = ["AMD", "LinearAlgebra", "SparseArrays", "Test"]
+git-tree-sha1 = "399bbe845e06e1c2d44ebb241f554d45eaf66788"
+uuid = "40e66cde-538c-5869-a4ad-c39174c6795b"
+version = "0.8.1"
+
 [[LLVM]]
 deps = ["CEnum", "LLVMExtra_jll", "Libdl", "Printf", "Unicode"]
 git-tree-sha1 = "46092047ca4edc10720ecab437c42283cd7c44f3"
@@ -848,7 +866,7 @@ uuid = "6f1432cf-f94c-5a45-995e-cdbf5db27b0b"
 version = "2.1.2"
 
 [[MLBasedESC]]
-deps = ["BenchmarkTools", "DynamicPolynomials", "Flux", "Formatting", "LinearAlgebra", "MultivariatePolynomials", "Printf", "Random", "ReverseDiff", "Revise", "SparseArrays", "Zygote"]
+deps = ["BenchmarkTools", "Convex", "DynamicPolynomials", "Flux", "Formatting", "LinearAlgebra", "MosekTools", "MultivariatePolynomials", "Printf", "Random", "ReverseDiff", "Revise", "SparseArrays", "Zygote"]
 path = "/home/wankunsirichotiyakul/.julia/dev/MLBasedESC"
 uuid = "0d2b134a-22b1-4965-bb14-6de4eebc6429"
 version = "0.1.0"
@@ -921,6 +939,18 @@ version = "1.0.2"
 
 [[Mmap]]
 uuid = "a63ad114-7e13-5084-954f-fe012c677804"
+
+[[Mosek]]
+deps = ["Libdl", "Pkg", "Printf", "SparseArrays", "WinReg"]
+git-tree-sha1 = "f7c2c7ff998dcc378587bda88dababb5783dda57"
+uuid = "6405355b-0ac2-5fba-af84-adbd65488c0e"
+version = "1.2.1"
+
+[[MosekTools]]
+deps = ["MathOptInterface", "Mosek", "Printf"]
+git-tree-sha1 = "56f7c254a9d3769bda929e05f1db2d19d8aa3375"
+uuid = "1ec41992-ff65-5c91-ac43-2df89e9693a4"
+version = "0.9.4"
 
 [[MozillaCACerts_jll]]
 uuid = "14a3606d-f60d-562e-9121-12d972cd8159"
@@ -1553,6 +1583,12 @@ deps = ["Colors", "Dates", "Observables", "OrderedCollections"]
 git-tree-sha1 = "80661f59d28714632132c73779f8becc19a113f2"
 uuid = "cc8bc4a8-27d6-5769-a93b-9d913e69aa62"
 version = "0.6.4"
+
+[[WinReg]]
+deps = ["Test"]
+git-tree-sha1 = "808380e0a0483e134081cc54150be4177959b5f4"
+uuid = "1b915085-20d7-51cf-bf83-8f477d6f5128"
+version = "0.3.1"
 
 [[XML2_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Libiconv_jll", "Pkg", "Zlib_jll"]

@@ -56,10 +56,13 @@ function vec2tril(v::AbstractVector, ::Bool)
     sum( [diagm(-i-1 => getindex(v, diag_ind[1+i:end] .- i)) for i=0:M-1] )
 end
 function tril2vec(Q::Matrix)
-    N = size(Q,1)
-    denseidx = filter(collect(Iterators.product(1:N, 1:N))) do x
-        first(x) <= last(x)
-    end
-    return [Q[CartesianIndex(i,j)] for (i,j) in denseidx]
+    return Q[tril2vec_perm(size(Q,1))]
+end
+function tril2vec_perm(M::Integer)
+    N = floor(Int, ((2*M+1)^2 - 1)/8)
+    R = vec2tril(1:N)
+    p = sortperm(vec(R))
+    start = findfirst(isone, p)
+    return p[start:end]
 end
 tril2vec(L::LowerTriangular) = tril2vec(L.data)

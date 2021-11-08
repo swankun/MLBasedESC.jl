@@ -1,5 +1,7 @@
-export PDELoss, ConvexVdLoss, optimize!,
+export PDELossMd, PDELossVd, PDELossCombined, ConvexVdLoss, optimize!,
     loss_massd, ∂loss_massd, loss_ped, ∂loss_ped
+
+###############################################################################
 
 function loss_massd(prob::IDAPBCProblem, q, θ=prob.init_params)
     massd_inv_ps = getindex(θ, prob.ps_index[:mass_inv])
@@ -36,6 +38,8 @@ function loss_ped(prob::IDAPBCProblem, q, θ=prob.init_params)
 end
 ∂loss_ped(prob::IDAPBCProblem) = (q,ps) -> ReverseDiff.gradient(w -> loss_ped(prob,q,w), ps)
 
+###############################################################################
+
 bstatus(b,bs,l) = @printf("Batch %05d/%05d | %10.4e\r", b, bs, l)
 estatus(t,e,l,maxiters) = @printf("EPOCH %05d/%05d | TRAIN LOSS (%s) = %10.4e\n", e, maxiters, t, l)
 
@@ -63,25 +67,52 @@ function zeroexcept!(vec::Vector, target, keypairs)
     end
 end
 
-abstract type IDAPBCLoss end
+###############################################################################
 
-struct PDELoss{TP,F1,F2} <: IDAPBCLoss
+abstract type IDAPBCLoss end
+abstract type PDELoss <: IDAPBCLoss end
+(l::PDELoss)(x, paramvec) = l.J(x, paramvec)
+gradient(l::PDELoss, x, paramvec) = l.∂J(x, paramvec)
+
+###############################################################################
+
+struct PDELossMd{TP,F1,F2} <: PDELoss
     prob::TP
     J::F1
     ∂J::F2
 end
-function PDELoss(prob::IDAPBCProblem)
+function PDELossMd(prob::IDAPBCProblem)
     ℓ1  = loss_massd
     ∂ℓ1 = ∂loss_massd(prob)
+    J(x, paramvec) = ℓ1(prob,x,paramvec) 
+    ∂J(x, paramvec) = ∂ℓ1(x,paramvec)
+    return PDELossMd{typeof(prob),typeof(J),typeof(∂J)}(prob, J, ∂J)
+end
+
+struct PDELossVd{TP,F1,F2} <: PDELoss
+    prob::TP
+    J::F1
+    ∂J::F2
+end
+function PDELossVd(prob::IDAPBCProblem)
     ℓ2(q,θ) = loss_ped(prob,q,θ)
     ∂ℓ2 = (q,θ) -> ReverseDiff.gradient(w->ℓ2(q,w), θ)
-    J(x, paramvec) = ℓ1(prob,x,paramvec) + ℓ2(x,paramvec)
-    ∂J(x, paramvec) = ∂ℓ1(x,paramvec) + ∂ℓ2(x,paramvec)
-    return PDELoss{typeof(prob),typeof(J),typeof(∂J)}(prob, J, ∂J)
+    J(x, paramvec) = ℓ2(x,paramvec)
+    ∂J(x, paramvec) = ∂ℓ2(x,paramvec)
+    return PDELossVd{typeof(prob),typeof(J),typeof(∂J)}(prob, J, ∂J)
 end
-(l::PDELoss)(x, paramvec) = l.J(x, paramvec)
 
-gradient(l::PDELoss, x, paramvec) = l.∂J(x, paramvec)
+struct PDELossCombined{TP,F1,F2} <: PDELoss
+    J::F1
+    ∂J::F2
+end
+function PDELossCombined(prob::IDAPBCProblem)
+    ℓ1 = PDELossMd(prob)
+    ℓ2 = PDELossVd(prob)
+    J(x, paramvec) = ℓ1(x,paramvec) + ℓ2(x,paramvec)
+    ∂J(x, paramvec) = gradient(ℓ1,x,paramvec) + gradient(ℓ2,x,paramvec)
+    return PDELossCombined{typeof(prob),typeof(J),typeof(∂J)}(J, ∂J)
+end
 
 function optimize!(loss::PDELoss, paramvec, data; η=0.001, batchsize=64, maxiters=1e4, tol=1e-4)
     batchgs = Vector{typeof(paramvec)}(undef, batchsize)
@@ -99,6 +130,9 @@ function optimize!(loss::PDELoss, paramvec, data; η=0.001, batchsize=64, maxite
             bstatus(nbatch, max_batch, batchloss)
             pmap!(batchgs, x->gradient(loss,x,paramvec), batch)
             grads = 1/npoints * sum(batchgs[1:npoints])
+            if isa(loss, PDELossVd)
+                zeroexcept!(grads, :potential, prob.ps_index)
+            end
             if !any(isnan.(grads))
                 Optimise.update!(optimizer, paramvec, grads)
                 nbatch += 1
@@ -110,6 +144,7 @@ function optimize!(loss::PDELoss, paramvec, data; η=0.001, batchsize=64, maxite
     estatus("PDE", nepoch, 1/length(data) * pmap(x->loss(x,paramvec), data), maxiters)
 end
 
+###############################################################################
 
 struct ConvexVdLoss{TP,F} <: IDAPBCLoss
     prob::TP
@@ -151,31 +186,37 @@ function optimize!(loss::ConvexVdLoss, paramvec, data)
     Md(x) = inv(loss.prob.hamd.mass_inv(x, Mdθ))
     M_inv = loss.prob.ham.mass_inv
     Gperp = loss.prob.input_annihilator
-    A = mapreduce(x->Gperp*(Md(x)*M_inv(x)*loss.J(x)), vcat, data)
-    B = mapreduce(x->Gperp*(loss.prob.ham.jac_pe(x)[:]), vcat, data)
-    res = A \ B
-    Q = vec2tril(res) + vec2tril(res)' - Diagonal(diag(vec2tril(res)))
-    L = cholesky(Q + eltype(paramvec)(5e-4)*I).L  # may fail due to non PSD-ness.
-    paramvec[loss.prob.ps_index[:potential]] .= tril2vec(L)
-    B - A*res
-    #=
+    A = mapreduce(x->Gperp*(-Md(x)*M_inv(x)*loss.J(x)), vcat, data)
+    B = mapreduce(x->Gperp*(-loss.prob.ham.jac_pe(x)[:]), vcat, data)
+    # return A, B
+    # res = A \ B
+    # Q = vec2tril(res) + vec2tril(res)' - Diagonal(diag(vec2tril(res)))
+    # try
+    #     L = cholesky(Q + eltype(paramvec)(1-4)*I).L  # may fail due to non PSD-ness.
+    #     paramvec[loss.prob.ps_index[:potential]] .= tril2vec(L)
+    #     return A*res - B
+    # catch e
+    #     if isa(e, PosDefException)
+    #         @warn "Could not perform Cholesky decomposition."
+    #         return Q, A*res - B
+    #     else
+    #         throw(e)
+    #     end
+    # end
     m = length(Vd.mono)
-    model = Model(Mosek.Optimizer)
-    JuMP.@variable(model, R[1:m, 1:m], PSD)
-    denseidx = filter(collect(Iterators.product(1:m, 1:m))) do x
-        first(x) <= last(x)
+    R = Variable((m,m))
+    idx = tril2vec_perm(m)
+    p = minimize(sumsquares(A*R[idx] - B), isposdef(R))
+    solver = () -> Mosek.Optimizer()
+    solve!(p, solver)
+    if p.status == MosekTools.MathOptInterface.OPTIMAL
+        Q = evaluate(R)
+        L = cholesky(Q).L
+        paramvec[loss.prob.ps_index[:potential]] .= tril2vec(L)
+        nothing
+    else
+        @warn "Optimizer did not return OPTIMAL status"
     end
-    Rvec = [R[CartesianIndex(i,j)] for (i,j) in denseidx]
-    x = A*Rvec - B
-    JuMP.@variable(model, t)
-    @constraint(model, [t; x] in SecondOrderCone())
-    @objective(model, Min, t)
-    optimize!(model)
-    res = value.(R)
-    L = cholesky(res).U
-    θ = [L[CartesianIndex(i,j)] for (i,j) in denseidx]
-    θ, res
-    =#
 end
 
 function test(loss::ConvexVdLoss)

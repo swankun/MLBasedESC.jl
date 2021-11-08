@@ -19,18 +19,18 @@ function create_true_hamiltonian()
     Hamiltonian(mass_inv, pe, input_jacobian)
 end
 
-# input_mapping(x) = [
-#     one(eltype(x))-cos(x[1]); 
-#     sin(x[1]); 
-#     one(eltype(x))-cos(x[2]); 
-#     sin(x[2])
-# ]
 input_mapping(x) = [
     one(eltype(x))-cos(x[1]); 
-    x[1]
-    x[2]
-    sin(x[1])
+    sin(x[1]); 
+    one(eltype(x))-cos(x[2]); 
+    sin(x[2])
 ]
+# input_mapping(x) = [
+#     one(eltype(x))-cos(x[1]); 
+#     x[1]
+#     x[2]
+#     sin(x[1])
+# ]
 
 function input_jacobian(x)
     """
@@ -39,17 +39,23 @@ function input_jacobian(x)
     """
     T = eltype(x)
     [
-        x[4] zero(T); 
-        one(T) zero(T); 
-        zero(T) one(T); 
-        one(T)-x[1] zero(T)
+        x[2] zero(T); 
+        one(T)-x[1] zero(T); 
+        zero(T) x[4]; 
+        zero(T) one(T)-x[3]
     ]
+    # [
+    #     x[4] zero(T); 
+    #     one(T) zero(T); 
+    #     zero(T) one(T); 
+    #     one(T)-x[1] zero(T)
+    # ]
 end
 
 function create_learning_hamiltonian()
     massd_inv = PSDNeuralNetwork(Float32, 2, nin=4)
-    vd = NeuralNetwork(Float32, [4,16,16,1], symmetric=!true, fout=x->x.^2, dfout=x->eltype(x)(2x))
-    # vd = SOSPoly(4, 1:2)
+    # vd = NeuralNetwork(Float32, [4,16,16,1], symmetric=!true, fout=x->x.^2, dfout=x->eltype(x)(2x))
+    vd = SOSPoly(4, 1:1)
     Hamiltonian(massd_inv, vd, input_jacobian)
 end
 
@@ -66,7 +72,7 @@ function create_ida_pbc_problem()
     input = vcat(-1.0f0,1.0f0)
     input_annihilator = hcat(1.0f0,1.0f0)
     ham = create_true_hamiltonian()
-    hamd = create_partial_learning_hamiltonian()
+    hamd = create_learning_hamiltonian()
     if USE_J2
         J2 = InterconnectionMatrix(
             SkewSymNeuralNetwork(Float32, 2, nin=4),
