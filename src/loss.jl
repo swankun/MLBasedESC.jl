@@ -67,6 +67,18 @@ function zeroexcept!(vec::Vector, target, keypairs)
     end
 end
 
+function zeroat!(vec::Vector, target, keypairs)
+    vec[keypairs[target]] .= zero(eltype(vec))
+end
+
+function zerobias!(vec::Vector, net::NeuralNetwork, target, keypairs)
+    for layer in 1:net.depth
+        this_later_ps_idx = net.inds[layer].flat
+        this_layer_bias_idx = this_later_ps_idx[net.inds[layer].b]
+        vec[ keypairs[target][this_layer_bias_idx] ] .= zero(eltype(vec))
+    end
+end
+
 ###############################################################################
 
 abstract type IDAPBCLoss end
@@ -103,6 +115,7 @@ function PDELossVd(prob::IDAPBCProblem)
 end
 
 struct PDELossCombined{TP,F1,F2} <: PDELoss
+    prob::TP
     J::F1
     ∂J::F2
 end
@@ -111,7 +124,7 @@ function PDELossCombined(prob::IDAPBCProblem)
     ℓ2 = PDELossVd(prob)
     J(x, paramvec) = ℓ1(x,paramvec) + ℓ2(x,paramvec)
     ∂J(x, paramvec) = gradient(ℓ1,x,paramvec) + gradient(ℓ2,x,paramvec)
-    return PDELossCombined{typeof(prob),typeof(J),typeof(∂J)}(J, ∂J)
+    return PDELossCombined{typeof(prob),typeof(J),typeof(∂J)}(prob, J, ∂J)
 end
 
 function optimize!(loss::PDELoss, paramvec, data; η=0.001, batchsize=64, maxiters=1e4, tol=1e-4)
@@ -131,8 +144,9 @@ function optimize!(loss::PDELoss, paramvec, data; η=0.001, batchsize=64, maxite
             pmap!(batchgs, x->gradient(loss,x,paramvec), batch)
             grads = 1/npoints * sum(batchgs[1:npoints])
             if isa(loss, PDELossVd)
-                zeroexcept!(grads, :potential, prob.ps_index)
+                zeroexcept!(grads, :potential, loss.prob.ps_index)
             end
+            zerobias!(grads, loss.prob.hamd.potential, :potential, loss.prob.ps_index)
             if !any(isnan.(grads))
                 Optimise.update!(optimizer, paramvec, grads)
                 nbatch += 1
@@ -210,9 +224,13 @@ function optimize!(loss::ConvexVdLoss, paramvec, data)
     solver = () -> Mosek.Optimizer()
     solve!(p, solver)
     if p.status == MosekTools.MathOptInterface.OPTIMAL
-        Q = evaluate(R)
+        Q = round.(evaluate(R), digits=6)
+        
+        # Λ, U = eigen(Q)
+        # Qproj = sum(Λ[i]*U[i,:]*U[i,:]' for i in findall(x->x>0, Λ))
+        # Qproj = (Qproj + Qproj')/2
         L = cholesky(Q).L
-        paramvec[loss.prob.ps_index[:potential]] .= tril2vec(L)
+        paramvec[loss.prob.ps_index[:potential]] .= eltype(paramvec).(tril2vec(L))
         nothing
     else
         @warn "Optimizer did not return OPTIMAL status"

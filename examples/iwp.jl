@@ -53,9 +53,9 @@ function input_jacobian(x)
 end
 
 function create_learning_hamiltonian()
-    massd_inv = PSDNeuralNetwork(Float32, 2, nin=4)
-    # vd = NeuralNetwork(Float32, [4,16,16,1], symmetric=!true, fout=x->x.^2, dfout=x->eltype(x)(2x))
-    vd = SOSPoly(4, 1:1)
+    massd_inv = PSDNeuralNetwork(Float32, 2, 2, nin=4, num_hidden_nodes=1)
+    vd = NeuralNetwork(Float32, [4,32,64,16,1], symmetric=!true, fout=x->x.^2, dfout=x->eltype(x)(2x))
+    # vd = SOSPoly(4, 1:1)
     Hamiltonian(massd_inv, vd, input_jacobian)
 end
 
@@ -187,5 +187,5 @@ function test_hamd_gradient()
     )
 end
 
-get_Vd(prob,ps) = (θ)->prob.hamd.potential(input_mapping(θ), ps)
-get_Md(prob,ps) = (θ)->inv(prob.hamd.mass_inv(input_mapping(θ), ps))
+get_Vd(prob,ps) = (θ)->prob.hamd.potential(input_mapping(θ), getindex(ps, prob.ps_index[:potential]))
+get_Md(prob,ps) = (θ)->inv(prob.hamd.mass_inv(input_mapping(θ), getindex(ps, prob.ps_index[:mass_inv])))
