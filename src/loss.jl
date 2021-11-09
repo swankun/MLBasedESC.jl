@@ -1,4 +1,5 @@
-export PDELossMd, PDELossVd, PDELossCombined, ConvexVdLoss, optimize!,
+export PDELossMd, PDELossVd, PDELossCombined,
+    ConvexVdLoss, ConvexMdLoss, optimize!,
     loss_massd, ∂loss_massd, loss_ped, ∂loss_ped
 
 ###############################################################################
@@ -79,6 +80,14 @@ function zerobias!(vec::Vector, net::NeuralNetwork, target, keypairs)
     end
 end
 
+function zeroweight!(vec::Vector, net::NeuralNetwork, target, keypairs)
+    for layer in 1:net.depth
+        this_later_ps_idx = net.inds[layer].flat
+        this_layer_weights_idx = this_later_ps_idx[net.inds[layer].W]
+        vec[ keypairs[target][this_layer_weights_idx] ] .= zero(eltype(vec))
+    end
+end
+
 ###############################################################################
 
 abstract type IDAPBCLoss end
@@ -143,10 +152,17 @@ function optimize!(loss::PDELoss, paramvec, data; η=0.001, batchsize=64, maxite
             bstatus(nbatch, max_batch, batchloss)
             pmap!(batchgs, x->gradient(loss,x,paramvec), batch)
             grads = 1/npoints * sum(batchgs[1:npoints])
-            if isa(loss, PDELossVd)
+            if isa(loss, PDELossVd) 
                 zeroexcept!(grads, :potential, loss.prob.ps_index)
             end
-            zerobias!(grads, loss.prob.hamd.potential, :potential, loss.prob.ps_index)
+            if isa(loss.prob.hamd.potential, NeuralNetwork)
+                zerobias!(paramvec, loss.prob.hamd.potential, :potential, loss.prob.ps_index)
+                zerobias!(grads, loss.prob.hamd.potential, :potential, loss.prob.ps_index)
+            end
+            if isa(loss.prob.hamd.mass_inv, PSDNeuralNetwork)
+                zeroweight!(paramvec, loss.prob.hamd.mass_inv.net, :mass_inv, loss.prob.ps_index)
+                zeroweight!(grads, loss.prob.hamd.mass_inv.net, :mass_inv, loss.prob.ps_index)
+            end
             if !any(isnan.(grads))
                 Optimise.update!(optimizer, paramvec, grads)
                 nbatch += 1
@@ -166,6 +182,9 @@ struct ConvexVdLoss{TP,F} <: IDAPBCLoss
 end
 function ConvexVdLoss(prob::IDAPBCProblem, inputJ::Function)
     Vd = prob.hamd.potential
+    if !isa(Vd, SOSPoly)
+        throw("Vd must be a SOS Polynomial.")
+    end
     Nθ = length(Vd.θ)
     Lidx = coeff_matrix(Vd,1:Nθ)
     Ridx = Lidx + Lidx' - Diagonal(diag(Lidx))
@@ -223,18 +242,16 @@ function optimize!(loss::ConvexVdLoss, paramvec, data)
     p = minimize(sumsquares(A*R[idx] - B), isposdef(R))
     solver = () -> Mosek.Optimizer()
     solve!(p, solver)
-    if p.status == MosekTools.MathOptInterface.OPTIMAL
-        Q = round.(evaluate(R), digits=6)
-        
-        # Λ, U = eigen(Q)
-        # Qproj = sum(Λ[i]*U[i,:]*U[i,:]' for i in findall(x->x>0, Λ))
-        # Qproj = (Qproj + Qproj')/2
-        L = cholesky(Q).L
-        paramvec[loss.prob.ps_index[:potential]] .= eltype(paramvec).(tril2vec(L))
-        nothing
-    else
+    if p.status !== MosekTools.MathOptInterface.OPTIMAL
         @warn "Optimizer did not return OPTIMAL status"
     end
+    Q = round.(evaluate(R), digits=9)
+    Λ, U = eigen(Q)
+    Qproj = sum(Λ[i]*U[i,:]*U[i,:]' for i in findall(x->x>0, Λ))
+    Q = (Qproj + Qproj')/2
+    L = cholesky(Q).L
+    paramvec[loss.prob.ps_index[:potential]] .= eltype(paramvec).(tril2vec(L))
+    nothing
 end
 
 function test(loss::ConvexVdLoss)
@@ -249,4 +266,62 @@ function test(loss::ConvexVdLoss)
     Qvec = [Q[CartesianIndex(i,j)] for (i,j) in tril_idx]
     x = rand(length(Vd.mono))
     @assert isapprox(loss.J(x)*Qvec, JVd(x, θ)[:], atol=1e-6)
+end
+
+###############################################################################
+
+struct ConvexMdLoss{TP,F} <: IDAPBCLoss
+    prob::TP
+    J::F
+end
+function ConvexMdLoss(prob::IDAPBCProblem)
+    Mdinv = prob.hamd.mass_inv
+    if !isa(Mdinv, PSDMatrix)
+        throw("Md must be a constant PSDMatrix")
+    end
+    Minv = prob.ham.mass_inv
+    ∇Vd = prob.hamd.jac_pe
+    Gperp = prob.input_annihilator
+    Nθ = length(Mdinv.θ)
+    Lidx = vec2tril(1:Nθ)
+    Ridx = Lidx + Lidx' - Diagonal(diag(Lidx))
+    J(x) = begin
+        A = Minv(x)*∇Vd(x)'
+        N = length(A)
+        ps = 1:N^2
+        Mdinv_surrogate(θ) = reshape(θ, (N,N))
+        coeffs = ReverseDiff.jacobian(θ->Mdinv_surrogate(θ)*A, eltype(x).(ps))
+        R = zeros(eltype(coeffs), (size(coeffs,1),Nθ))
+        for (row,C) in enumerate(eachrow(coeffs))
+            for (c, θidx) in zip(C, Ridx)
+                R[row,θidx] += c
+            end
+        end
+        return R
+    end
+    return ConvexMdLoss{typeof(prob),typeof(J)}(prob,J)
+end
+(l::ConvexMdLoss)(x) = l.J(x)
+
+function optimize!(loss::ConvexMdLoss, paramvec, data)
+    Gperp = loss.prob.input_annihilator
+    A = mapreduce(x->Gperp*(-loss.J(x)), vcat, data)
+    B = mapreduce(x->Gperp*(-loss.prob.ham.jac_pe(x)[:]), vcat, data)
+    m = loss.prob.hamd.mass_inv.n
+    R = Variable((m,m))
+    idx = tril2vec_perm(m)
+    p = minimize(sumsquares(A*R[idx] - B), isposdef(R))
+    solver = () -> Mosek.Optimizer()
+    solve!(p, solver)
+    if p.status == MosekTools.MathOptInterface.OPTIMAL
+        Q = round.(evaluate(R), digits=6)
+        Λ, U = eigen(Q)
+        Qproj = sum(Λ[i]*U[i,:]*U[i,:]' for i in findall(x->x>0, Λ))
+        Q = (Qproj + Qproj')/2
+        L = cholesky(Q).L
+        paramvec[loss.prob.ps_index[:mass_inv]] .= eltype(paramvec).(tril2vec(L))
+        nothing
+    else
+        @warn "Optimizer did not return OPTIMAL status"
+    end
 end

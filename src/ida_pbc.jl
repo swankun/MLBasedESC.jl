@@ -83,11 +83,14 @@ end
 function IDAPBCProblem(ham::Hamiltonian{true}, hamd::Hamiltonian{false}, 
     input, input_annihilator, interconnection::InterconnectionMatrix
 )
-    if isa(hamd.mass_inv, FunctionApproxmiator)
+    if isa(hamd.mass_inv, FunctionApproxmiator) && !isa(hamd.mass_inv, PSDMatrix)
         θMd = hamd.mass_inv.net.θ
         inferred_precision = precisionof(hamd.mass_inv.net)
+    elseif isa(hamd.mass_inv, PSDMatrix)
+        θMd = hamd.mass_inv.θ
+        inferred_precision = eltype(hamd.mass_inv([0f0]))
     else
-        inferred_precision = eltype(hamd.mass_inv([0.]))
+        inferred_precision = eltype(hamd.mass_inv([0f0]))
         θMd = inferred_precision[0.0]
     end
     init_params = [θMd; hamd.potential.θ]

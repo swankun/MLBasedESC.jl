@@ -54,16 +54,17 @@ end
 
 function create_learning_hamiltonian()
     massd_inv = PSDNeuralNetwork(Float32, 2, 2, nin=4, num_hidden_nodes=1)
-    vd = NeuralNetwork(Float32, [4,32,64,16,1], symmetric=!true, fout=x->x.^2, dfout=x->eltype(x)(2x))
+    vd = NeuralNetwork(Float32, [4,16,16,1], symmetric=!true, fout=x->x.^2, dfout=x->eltype(x)(2x))
     # vd = SOSPoly(4, 1:1)
     Hamiltonian(massd_inv, vd, input_jacobian)
 end
 
 function create_partial_learning_hamiltonian()
-    a1,a2,a3 = (0.001f0, -0.002f0, 0.005f0)
-    massd = [a1 a2; a2 a3]
-    massd_inv = inv(massd)
-    vd = SOSPoly(4, 1:1) # Float32[-6.3120513, 2.4831183f-5, -0.00027178923, -4.817491f-7, 0.0051580914, -0.0009012511, -0.0027414176, -5.4961457, 3.1027546, 4.6f-43]
+    # a1,a2,a3 = (0.001f0, -0.002f0, 0.005f0)
+    # massd = [a1 a2; a2 a3]
+    # massd_inv = inv(massd)
+    massd_inv = PSDMatrix(Float32,2,4)
+    vd = SOSPoly(4, 1:2) # Float32[-6.3120513, 2.4831183f-5, -0.00027178923, -4.817491f-7, 0.0051580914, -0.0009012511, -0.0027414176, -5.4961457, 3.1027546, 4.6f-43]
     # vd = IWPSOSPoly() # Float32[6.389714, 0.0, 0.2223909, 0.0, 0.006149394, 0.0049287872, 0.0, 0.0, 0.0, -0.30627432]
     Hamiltonian(massd_inv, vd, input_jacobian)
 end
@@ -72,7 +73,7 @@ function create_ida_pbc_problem()
     input = vcat(-1.0f0,1.0f0)
     input_annihilator = hcat(1.0f0,1.0f0)
     ham = create_true_hamiltonian()
-    hamd = create_learning_hamiltonian()
+    hamd = create_partial_learning_hamiltonian()
     if USE_J2
         J2 = InterconnectionMatrix(
             SkewSymNeuralNetwork(Float32, 2, nin=4),
@@ -127,7 +128,8 @@ function generate_trajectory(prob, x0, tf, θ=prob.init_params; umax=eltype(x0)(
     I1 = 0.0455f0
     I2 = 0.00425f0
     m3 = 0.183f0*9.81f0
-    b1 = b2 = 0.02f0
+    b1 = 0.00f0
+    b2 = 0.00f0
     M = diagm(vcat(I1,I2))
     policy = controller(prob, θ, damping_gain=Kv)
     u(q,p) = clamp(policy(q,p), -umax, umax)
@@ -142,7 +144,7 @@ function generate_trajectory(prob, x0, tf, θ=prob.init_params; umax=eltype(x0)(
         dx[4] = effort/I2 - b2/I2*q2dot
     end
     ode = ODEProblem{true}(f!, x0, (zero(tf), tf))
-    sol = OrdinaryDiffEq.solve(ode, Tsit5(), saveat=tf/200)
+    sol = OrdinaryDiffEq.solve(ode, BS5(), saveat=tf/1000)
     ctrl = mapslices(x->u(input_mapping(x[1:2]), M*x[3:4]), Array(sol), dims=1) |> vec
     (sol, ctrl)
 end
