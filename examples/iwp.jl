@@ -10,51 +10,60 @@ function create_true_hamiltonian()
     I2 = 0.00425f0
     m3 = 0.183f0*9.81f0
     mass_inv = inv(diagm(vcat(I1, I2)))
-    # pe(q) = m3*(cos(q[1])-one(eltype(q)))
-    pe(q) = begin
-        # qbar = input_mapping(q)
-        # return -m3*qbar[1]
-        return -m3*q[1]
-    end
+    pe(q) = m3*(cos(q[1])-one(eltype(q)))
+    # pe(q) = begin
+    #     # qbar = input_mapping(q)
+    #     # return -m3*qbar[1]
+    #     return -m3*q[1]
+    # end
     Hamiltonian(mass_inv, pe, input_jacobian)
 end
 
-input_mapping(x) = [
-    one(eltype(x))-cos(x[1]); 
-    sin(x[1]); 
-    one(eltype(x))-cos(x[2]); 
-    sin(x[2])
-]
-# input_mapping(x) = [
-#     one(eltype(x))-cos(x[1]); 
-#     x[1]
-#     x[2]
-#     sin(x[1])
-# ]
-
+function input_mapping(x) 
+    # [
+    #     one(eltype(x))-cos(x[1]); 
+    #     sin(x[1]); 
+    #     one(eltype(x))-cos(x[2]); 
+    #     sin(x[2])
+    # ]
+    # [
+    #     one(eltype(x))-cos(x[1]); 
+    #     x[1]
+    #     x[2]
+    #     sin(x[1])
+    # ]
+    # [x[1], one(eltype(x))-cos(x[2]), sin(x[2])]
+    identity(x)
+end
 function input_jacobian(x)
     """
     Input mapping f(x) = [1-cos(x1), sin(x1), 1-cos(x2), sin(x2)]
     This is Jₓf
     """
     T = eltype(x)
-    [
-        x[2] zero(T); 
-        one(T)-x[1] zero(T); 
-        zero(T) x[4]; 
-        zero(T) one(T)-x[3]
-    ]
+    # [
+    #     x[2] zero(T); 
+    #     one(T)-x[1] zero(T); 
+    #     zero(T) x[4]; 
+    #     zero(T) one(T)-x[3]
+    # ]
     # [
     #     x[4] zero(T); 
     #     one(T) zero(T); 
     #     zero(T) one(T); 
     #     one(T)-x[1] zero(T)
     # ]
+    # [
+    #     one(T) zero(T)
+    #     zero(T) x[3]
+    #     zero(T) one(T)-x[2]
+    # ]
+    one(T)
 end
 
 function create_learning_hamiltonian()
-    massd_inv = PSDNeuralNetwork(Float32, 2, 2, nin=4, num_hidden_nodes=1)
-    vd = NeuralNetwork(Float32, [4,16,16,1], symmetric=!true, fout=x->x.^2, dfout=x->eltype(x)(2x))
+    massd_inv = PSDNeuralNetwork(Float32, 2, 3, nin=2, num_hidden_nodes=32)
+    vd = NeuralNetwork(Float32, [2,32,64,16,1], symmetric=!true, fout=abs, dfout=sign)
     # vd = SOSPoly(4, 1:1)
     Hamiltonian(massd_inv, vd, input_jacobian)
 end
@@ -64,7 +73,7 @@ function create_partial_learning_hamiltonian()
     # massd = [a1 a2; a2 a3]
     # massd_inv = inv(massd)
     massd_inv = PSDMatrix(Float32,2,4)
-    vd = SOSPoly(4, 1:2) # Float32[-6.3120513, 2.4831183f-5, -0.00027178923, -4.817491f-7, 0.0051580914, -0.0009012511, -0.0027414176, -5.4961457, 3.1027546, 4.6f-43]
+    vd = SOSPoly(4, 1:1) # Float32[-6.3120513, 2.4831183f-5, -0.00027178923, -4.817491f-7, 0.0051580914, -0.0009012511, -0.0027414176, -5.4961457, 3.1027546, 4.6f-43]
     # vd = IWPSOSPoly() # Float32[6.389714, 0.0, 0.2223909, 0.0, 0.006149394, 0.0049287872, 0.0, 0.0, 0.0, -0.30627432]
     Hamiltonian(massd_inv, vd, input_jacobian)
 end
@@ -73,7 +82,7 @@ function create_ida_pbc_problem()
     input = vcat(-1.0f0,1.0f0)
     input_annihilator = hcat(1.0f0,1.0f0)
     ham = create_true_hamiltonian()
-    hamd = create_partial_learning_hamiltonian()
+    hamd = create_learning_hamiltonian()
     if USE_J2
         J2 = InterconnectionMatrix(
             SkewSymNeuralNetwork(Float32, 2, nin=4),
@@ -110,10 +119,10 @@ function create_known_ida_pbc()
 end
 
 
-function assemble_data()
-    data = Vector{Float32}[]
-    dq = Float32(pi/20)
-    qmax = Float32(pi)
+function assemble_data(;input_mapping::Function=input_mapping, dq=Float32(pi/20), qmax=pi)
+    T = typeof(dq)
+    data = Vector{T}[]
+    qmax = T(qmax)
     q1range = range(-qmax, qmax, step=dq)
     q2range = range(-qmax, qmax, step=dq)
     for q1 in q1range
@@ -124,12 +133,12 @@ function assemble_data()
     return data
 end
 
-function generate_trajectory(prob, x0, tf, θ=prob.init_params; umax=eltype(x0)(Inf), Kv=eltype(x0)(10))
-    I1 = 0.0455f0
-    I2 = 0.00425f0
-    m3 = 0.183f0*9.81f0
-    b1 = 0.00f0
-    b2 = 0.00f0
+function generate_trajectory(prob, x0, tf, θ=prob.init_params; umax=eltype(x0)(Inf), Kv=eltype(x0)(10), uscale=1)
+    I1 = eltype(x0)(0.0455)
+    I2 = eltype(x0)(0.00425)
+    m3 = eltype(x0)(0.183*9.81)
+    b1 = eltype(x0)(0.005)
+    b2 = eltype(x0)(0.01)
     M = diagm(vcat(I1,I2))
     policy = controller(prob, θ, damping_gain=Kv)
     u(q,p) = clamp(policy(q,p), -umax, umax)
@@ -137,7 +146,7 @@ function generate_trajectory(prob, x0, tf, θ=prob.init_params; umax=eltype(x0)(
         q1, q2, q1dot, q2dot = x
         qbar = input_mapping(x[1:2])
         momentum = M * [q1dot, q2dot]
-        effort = u(qbar,momentum)
+        effort = eltype(x0)(uscale)*u(qbar,momentum)
         dx[1] = q1dot
         dx[2] = q2dot
         dx[3] = m3*sin(q1)/I1 - effort/I1 - b1/I1*q1dot
@@ -191,3 +200,79 @@ end
 
 get_Vd(prob,ps) = (θ)->prob.hamd.potential(input_mapping(θ), getindex(ps, prob.ps_index[:potential]))
 get_Md(prob,ps) = (θ)->inv(prob.hamd.mass_inv(input_mapping(θ), getindex(ps, prob.ps_index[:mass_inv])))
+
+function bilinear_alternation()
+    T = Float64
+
+    input_mapping(x) = begin 
+        [
+            one(eltype(x))-cos(x[1])
+            sin(x[1])
+            # one(eltype(x))-cos(x[2])
+            # sin(x[2])
+            # x[1]
+            x[2]
+        ] 
+    end
+    input_jacobian(x) = begin
+        T = eltype(x)
+        [
+            x[2] zero(T); 
+            one(T)-x[1] zero(T); 
+            # zero(T) x[4]; 
+            # zero(T) one(T)-x[3]; 
+            # one(T) zero(T)
+            zero(T) one(T); 
+        ] 
+    end
+    data = assemble_data(input_mapping=input_mapping, dq=T(pi/20));
+        
+    input = T.(vcat(-1.0,1.0))
+    input_annihilator = T.(hcat(1.0,1.0))
+
+    I1 = T(0.0455)
+    I2 = T(0.00425)
+    m3 = T(0.183*9.81)
+    mass_inv = T.(inv(diagm(vcat(I1, I2))))
+    pe(q) = begin
+        return -m3*q[1]
+    end
+    ham = Hamiltonian(mass_inv, pe, input_jacobian)
+
+    n = length(rand(data))
+    massd_inv = PSDMatrix(T,2,n)
+    Vd = SOSPoly(n, 1:2)
+    hamd = Hamiltonian(massd_inv, Vd, input_jacobian)
+
+    prob =  IDAPBCProblem(ham, hamd, input, input_annihilator);
+    θ = T.(MLBasedESC.params(prob));
+    l1 = ConvexVdLoss(prob, input_jacobian);
+    l2 = ConvexMdLoss(prob);
+
+    set_constant_Md!(prob, θ, [0.001 -0.002; -0.002 0.005])
+    # set_constant_Md!(prob, θ, [1.0 -2; -2 5])
+    # set_constant_Md!(prob, θ, 1.0*T.(collect(I(2))))
+    # set_constant_Md!(prob, θ, [0.01 -0.002; -0.002 0.001])
+# 
+    # Vd_trained_params = T[-6.3120513, 2.4831183f-5, -0.00027178923, -4.817491f-7, 0.0051580914, -0.0009012511, -0.0027414176, -5.4961457, 3.1027546, 4.6f-43];
+    # θ[prob.ps_index[:potential]] = Vd_trained_params;
+    # optimize!(l2, θ, data);
+    # optimize!(l1, θ, data);
+    # optimize!(l2, θ, data);
+    # optimize!(l1, θ, data);
+
+    optimize!(l1, θ, data);
+    optimize!(l2, θ, data);
+    optimize!(l1, θ, data);
+    optimize!(l2, θ, data);
+    optimize!(l1, θ, data);
+    optimize!(l2, θ, data);
+    optimize!(l1, θ, data);
+    optimize!(l2, θ, data);
+    
+
+    get_Vd(prob,ps) = (θ)->prob.hamd.potential(input_mapping(θ), getindex(ps, prob.ps_index[:potential]))
+    get_Md(prob,ps) = (θ)->inv(prob.hamd.mass_inv(input_mapping(θ), getindex(ps, prob.ps_index[:mass_inv])))
+
+    return prob, θ, get_Vd(prob, θ)
+end

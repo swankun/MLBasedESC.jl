@@ -1,4 +1,4 @@
-export InterconnectionMatrix, IDAPBCProblem, params, controller
+export InterconnectionMatrix, IDAPBCProblem, set_constant_Md!, params, controller
 
 
 struct InterconnectionMatrix{isstatic,T,UK}
@@ -143,6 +143,32 @@ function Base.show(io::IO, prob::IDAPBCProblem)
     print(io, "Potential energy\n\t"); show(io, prob.hamd.potential)
 end
 
+function Base.getproperty(p::IDAPBCProblem, sym::Symbol)
+    if sym === :Vd
+        return (q)->p.hamd.potential(eltype(p.init_params).(q), 
+            getindex(p.init_params, p.ps_index[:potential]))
+    elseif sym === :∇Vd
+        return (q)->p.hamd.jac_pe(eltype(p.init_params).(q), 
+            getindex(p.init_params, p.ps_index[:potential]))
+    elseif sym === :Md
+        return (q)->inv(p.hamd.mass_inv(eltype(p.init_params).(q), 
+            getindex(p.init_params, p.ps_index[:mass_inv])))
+    elseif sym === :∇Md
+        return (q)->p.hamd.jac_mass_inv(eltype(p.init_params).(q), 
+            getindex(p.init_params, p.ps_index[:mass_inv]))
+    elseif sym === :θ
+        return p.init_params
+    elseif sym === :θMd
+        return getindex(p.init_params, p.ps_index[:mass_inv])
+    elseif sym === :θVd
+        return getindex(p.init_params, p.ps_index[:potential])
+    elseif contains(string(sym), "θU") && isdigit(last(string(sym)))
+        return getindex(p.init_params, p.ps_index[Symbol( string("j2_u", last(string(sym))) )])
+    else # fallback to getfield
+        return getfield(p, sym)
+    end
+end
+
 function params(prob::IDAPBCProblem)
     deepcopy(prob.init_params)
 end
@@ -164,162 +190,22 @@ function controller(prob::IDAPBCProblem{T}, θ=prob.init_params; damping_gain=T(
         return u_es + u_di
     end
 end 
-#=
-function loss_massd(prob::IDAPBCProblem, q, θ=prob.init_params)
-    massd_inv_ps = getindex(θ, prob.ps_index[:mass_inv])
-    massd_inv = prob.hamd.mass_inv(q, massd_inv_ps)
-    massd_inv_gs = prob.hamd.jac_mass_inv(q, massd_inv_ps)
-    massd = inv(massd_inv)
-    mass_inv = prob.ham.mass_inv(q)
-    mass_inv_gs = prob.ham.jac_mass_inv(q)
-    
-    nq = size(massd,1)
-    map(1:nq) do j
-        uk_ps = getindex(θ, prob.ps_index[Symbol("j2_u", j)])
-        uk = prob.interconnection[j](q, uk_ps)
-        sum(abs2, prob.input_annihilator * 
-            (transpose(mass_inv_gs[j]) - (massd*mass_inv)*transpose(massd_inv_gs[j]) + uk*massd_inv))
-    end |> sum
-end
-function ∂loss_massd(prob::IDAPBCProblem)
-    if !isa(prob.hamd.mass_inv, FunctionApproxmiator)
-        return (q,ps) -> zeros(eltype(ps), size(ps))
+
+function set_constant_Md!(prob::IDAPBCProblem, θ::Vector, target::Matrix)
+    @assert size(target,1) == prob.hamd.mass_inv.n
+    L = tril2vec(cholesky(inv(target)).L)
+    Mdinv = prob.hamd.mass_inv
+    if isa(Mdinv, PSDNeuralNetwork)
+        net = Mdinv.net
+        zeroweight!(θ, net, :mass_inv, prob.ps_index)
+        last_layer_ps_idx = net.inds[end].flat
+        last_layer_bias_idx = last_layer_ps_idx[net.inds[end].b]
+        θ[ prob.ps_index[:mass_inv][last_layer_bias_idx] ] .= eltype(θ).(L)
+        nothing
+    elseif isa(Mdinv, PSDMatrix)
+        θ[prob.ps_index[:mass_inv]] .= eltype(θ).(L)
+        nothing
     else
-        return (q,ps) -> first(Zygote.gradient(w->loss_massd(prob,q,w), ps))
+        @warn "Only PSDNeuralNetwork or PSDMatrix can be set to a constant."
     end
 end
-
-function loss_ped(prob::IDAPBCProblem, q, θ=prob.init_params)
-    ped_ps = getindex(θ, prob.ps_index[:potential])
-    ped_gs = vec(prob.hamd.jac_pe(q, ped_ps))
-    pe_gs = prob.ham.jac_pe(q)[:]
-    massd_inv_ps = getindex(θ, prob.ps_index[:mass_inv])
-    massd = inv(prob.hamd.mass_inv(q,massd_inv_ps))
-    mass_inv = prob.ham.mass_inv(q)
-    abs2(dot( prob.input_annihilator, pe_gs - (massd*mass_inv)*ped_gs ))
-end
-∂loss_ped(prob::IDAPBCProblem) = (q,ps) -> ReverseDiff.gradient(w -> loss_ped(prob,q,w), ps)
-
-function pmap(f, batch::Vector{Vector{T}}) where {T<:Real}
-    l = Threads.Atomic{eltype(first(batch))}(0)
-    n = length(batch)
-    Threads.@threads for id in 1:n
-        Threads.atomic_add!(l, f(batch[id]))
-    end
-    return l.value
-end
-
-function pmap!(out, f, batch::Vector{Vector{T}}) where {T<:Real}
-    n = length(batch)
-    Threads.@threads for id in 1:n
-        out[id] = f(batch[id])
-    end
-end
-
-function zeroexcept!(vec::Vector, target, keypairs)
-    for (key,val) in keypairs
-        if key != target
-            vec[val] .= zero(eltype(vec))
-        end
-    end
-end
-
-function solve_sequential!(prob::IDAPBCProblem, paramvec, data, qdesired; batchsize=64, η=0.001, maxiters=1000)
-    ℓ1  = loss_massd
-    ∂ℓ1 = ∂loss_massd(prob)
-    ℓ2(q,θ) = loss_ped(prob,q,θ) + eltype(q)(1/batchsize)*abs2(prob.hamd.potential(qdesired, getindex(θ, prob.ps_index[:potential]))[1])
-    ∂ℓ2 = (q,θ) -> ReverseDiff.gradient(w->ℓ2(q,w), θ)
-    batchgs = Vector{typeof(paramvec)}(undef, batchsize)
-
-    dataloader = Data.DataLoader(data; batchsize=batchsize, shuffle=true)
-    max_batch = round(Int, dataloader.imax / dataloader.batchsize, RoundUp)
-    optimizer = ADAM(η)
-
-    bstatus(b,bs,l) = @printf("Batch %05d/%05d | %10.4e\r", b, bs, l)
-    estatus(t,e,l) = @printf("EPOCH %05d/%05d | TRAIN LOSS (%s) = %10.4e\n", e, maxiters, t, l)
-
-    nepoch = 0; 
-    train_loss = 1/length(data) * pmap(x->ℓ1(prob,x,paramvec), data)
-    while nepoch < maxiters && train_loss > 1e-6
-        estatus("Md", nepoch, train_loss)
-        nbatch = 1
-        for batch in dataloader
-            npoints = length(batch)
-            batchloss = 1/npoints * pmap(x->ℓ1(prob,x,paramvec), batch)
-            bstatus(nbatch, max_batch, batchloss)
-            pmap!(batchgs, x->∂ℓ1(x,paramvec), batch)
-            grads = 1/npoints * sum(batchgs[1:npoints])
-            if !any(isnan.(grads))
-                Optimise.update!(optimizer, paramvec, grads)
-                nbatch += 1
-            end
-        end
-        nepoch += 1
-        train_loss = 1/length(data) * pmap(x->ℓ1(prob,x,paramvec), data)
-    end
-    estatus("Md", nepoch, 1/length(data) * pmap(x->ℓ1(prob,x,paramvec), data))
-    GC.gc()
-
-    nepoch = 0; 
-    train_loss = 1/length(data) * pmap(x->ℓ2(x,paramvec), data)
-    optimizer = ADAM(η)
-    while nepoch < maxiters && train_loss > 1e-6
-        estatus("Vd", nepoch, train_loss)
-        nbatch = 1
-        for batch in dataloader
-            npoints = length(batch)
-            batchloss = 1/npoints * pmap(x->ℓ2(x,paramvec), batch)
-            bstatus(nbatch, max_batch, batchloss)
-            pmap!(batchgs, x->∂ℓ2(x,paramvec), batch)
-            grads = 1/npoints * sum(batchgs[1:npoints])
-            zeroexcept!(grads, :potential, prob.ps_index)
-            if !any(isnan.(grads))
-                Optimise.update!(optimizer, paramvec, grads)
-                nbatch += 1
-            end
-        end
-        nepoch += 1
-        train_loss = 1/length(data) * pmap(x->ℓ2(x,paramvec), data)
-    end
-    estatus("Vd", nepoch, 1/length(data) * pmap(x->ℓ2(x,paramvec), data))
-    GC.gc()
-
-end
-
-function solve!(prob::IDAPBCProblem, paramvec, data, qdesired; batchsize=64, η=0.001, maxiters=1000)
-    ℓ1  = loss_massd
-    ∂ℓ1 = ∂loss_massd(prob)
-    ℓ2(q,θ) = loss_ped(prob,q,θ) + eltype(q)(1/batchsize)*abs2(prob.hamd.potential(qdesired, getindex(θ, prob.ps_index[:potential]))[1])
-    ∂ℓ2 = (q,θ) -> ReverseDiff.gradient(w->ℓ2(q,w), θ)
-    batchgs = Vector{typeof(paramvec)}(undef, batchsize)
-
-    dataloader = Data.DataLoader(data; batchsize=batchsize, shuffle=true)
-    max_batch = round(Int, dataloader.imax / dataloader.batchsize, RoundUp)
-    optimizer = ADAM(η)
-
-    bstatus(b,bs,l) = @printf("Batch %05d/%05d | %10.4e\r", b, bs, l)
-    estatus(t,e,l) = @printf("EPOCH %05d/%05d | TRAIN LOSS (%s) = %10.4e\n", e, maxiters, t, l)
-
-    nepoch = 0; 
-    train_loss = 1/length(data) * pmap(x->ℓ1(prob,x,paramvec)+ℓ2(x,paramvec), data)
-    while nepoch < maxiters && train_loss > 1e-4
-        estatus("PDE", nepoch, train_loss)
-        nbatch = 1
-        for batch in dataloader
-            npoints = length(batch)
-            batchloss = 1/npoints * pmap(x->ℓ1(prob,x,paramvec)+ℓ2(x,paramvec), batch)
-            bstatus(nbatch, max_batch, batchloss)
-            pmap!(batchgs, x->∂ℓ1(x,paramvec)+∂ℓ2(x,paramvec), batch)
-            grads = 1/npoints * sum(batchgs[1:npoints])
-            if !any(isnan.(grads))
-                Optimise.update!(optimizer, paramvec, grads)
-                nbatch += 1
-            end
-        end
-        nepoch += 1
-        train_loss = 1/length(data) * pmap(x->ℓ1(prob,x,paramvec)+ℓ2(x,paramvec), data)
-    end
-    estatus("PDE", nepoch, 1/length(data) * pmap(x->ℓ1(prob,x,paramvec)+ℓ2(x,paramvec), data))
-    GC.gc()
-end
-=#

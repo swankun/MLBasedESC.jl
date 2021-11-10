@@ -71,7 +71,7 @@ end
 NeuralNetwork(widths::Vector{Int}) = NeuralNetwork(Float32, widths)
 
 function (net::NeuralNetwork)(x, p=net.θ)
-    net.layers[end].σ(_applychain(net, p, net.depth, x))
+    eltype(x).(net.layers[end].σ.(_applychain(net, p, net.depth, x)))::typeof(x)
 end
 
 function Base.show(io::IO, net::NeuralNetwork{T,C,D}) where {T,C,D}
