@@ -11,12 +11,13 @@ end
 
 abstract type FunctionApproxmiator end
 
-struct NeuralNetwork{T<:Real, ChainType<:Union{Chain}, LayerType<:Union{Dense}, F1, F2, F3} <: FunctionApproxmiator
+struct NeuralNetwork{T<:Real, ChainType<:Union{Chain}, LayerType<:Union{Dense}, F1, F2, F3, F4} <: FunctionApproxmiator
     depth  :: IndexType
     widths :: Vector{IndexType}
     σ      :: F1
     σ′     :: F2
-    dfout  :: F3
+    fout   :: F3
+    dfout  :: F4
     chain  :: ChainType
     layers :: Tuple{Vararg{LayerType}}
     θ      :: Vector{T}
@@ -36,7 +37,7 @@ function NeuralNetwork( T::Type,
     layers = Tuple([
         Dense(
             widths[i-1], widths[i], i==depth+1 ? fout : σ,
-            bias=true, init=glorot_uniform
+            bias=true, init=(x...)->T.(glorot_uniform(x...))
         ) for i in 2:depth+1
     ])
     chain = Chain(
@@ -63,15 +64,15 @@ function NeuralNetwork( T::Type,
 
     θ = vcat(map(x->vcat(x...), collect(Flux.params(chain)))...)
 
-    NeuralNetwork{T, typeof(chain), eltype(layers), typeof(σ), typeof(σ′), typeof(dfout)}(
-        depth, widths, σ, σ′, dfout, chain, layers, θ, inds
+    NeuralNetwork{T, typeof(chain), eltype(layers), typeof(σ), typeof(σ′), typeof(fout), typeof(dfout)}(
+        depth, widths, σ, σ′, fout, dfout, chain, layers, θ, inds
     )
 end
 
 NeuralNetwork(widths::Vector{Int}) = NeuralNetwork(Float32, widths)
 
 function (net::NeuralNetwork)(x, p=net.θ)
-    eltype(x).(net.layers[end].σ.(_applychain(net, p, net.depth, x)))::typeof(x)
+    net.fout.(_applychain(net, p, net.depth, x))
 end
 
 function Base.show(io::IO, net::NeuralNetwork{T,C,D}) where {T,C,D}

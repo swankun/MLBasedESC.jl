@@ -95,6 +95,11 @@ abstract type PDELoss <: IDAPBCLoss end
 (l::PDELoss)(x, paramvec) = l.J(x, paramvec)
 gradient(l::PDELoss, x, paramvec) = l.∂J(x, paramvec)
 
+function Base.show(io::IO, S::IDAPBCLoss)
+    print(io, "IDAPBCLoss of type: $(string(typeof(S).name.name)) for problem: ")
+    show(S.prob)
+end
+
 ###############################################################################
 
 struct PDELossMd{TP,F1,F2} <: PDELoss
@@ -131,8 +136,9 @@ end
 function PDELossCombined(prob::IDAPBCProblem)
     ℓ1 = PDELossMd(prob)
     ℓ2 = PDELossVd(prob)
-    J(x, paramvec) = ℓ1(x,paramvec) + ℓ2(x,paramvec)
-    ∂J(x, paramvec) = gradient(ℓ1,x,paramvec) + gradient(ℓ2,x,paramvec)
+    # ℓ3(x, paramvec) = 0.001*sum( abs, 1 ./ paramvec[prob.ps_index[:mass_inv]][end-2:end] ) 
+    J(x, paramvec) = ℓ1(x,paramvec) + ℓ2(x,paramvec) #+ ℓ3(x,paramvec)
+    ∂J(x, paramvec) = gradient(ℓ1,x,paramvec) + gradient(ℓ2,x,paramvec) #+ ReverseDiff.gradient(w->ℓ3(x,w), paramvec)
     return PDELossCombined{typeof(prob),typeof(J),typeof(∂J)}(prob, J, ∂J)
 end
 
@@ -317,9 +323,10 @@ function optimize!(loss::ConvexMdLoss, paramvec, data)
     B = mapreduce(x->Gperp*(-loss.prob.ham.jac_pe(x)[:]), vcat, data)
     m = loss.prob.hamd.mass_inv.n
     R = Variable((m,m))
-    ell = randn(length(loss.prob.hamd.mass_inv.θ))
-    ansatz = vec2tril(ell)*vec2tril(ell)'
+    # ell = randn(length(loss.prob.hamd.mass_inv.θ))
+    # ansatz = vec2tril(ell)*vec2tril(ell)'
     # ansatz = [0.1 0.0; 0.0 0.2]
+    ansatz = loss.prob.Md(rand(data)) |> inv
     set_value!( R, ansatz )
     idx = tril2vec_perm(m)
     p = minimize(sumsquares(A*R[idx] - B), isposdef(R))

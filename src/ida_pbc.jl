@@ -145,17 +145,13 @@ end
 
 function Base.getproperty(p::IDAPBCProblem, sym::Symbol)
     if sym === :Vd
-        return (q)->p.hamd.potential(eltype(p.init_params).(q), 
-            getindex(p.init_params, p.ps_index[:potential]))
+        return p.hamd.potential
     elseif sym === :∇Vd
-        return (q)->p.hamd.jac_pe(eltype(p.init_params).(q), 
-            getindex(p.init_params, p.ps_index[:potential]))
+        return p.hamd.jac_pe
     elseif sym === :Md
-        return (q)->inv(p.hamd.mass_inv(eltype(p.init_params).(q), 
-            getindex(p.init_params, p.ps_index[:mass_inv])))
+        return p.hamd.mass_inv
     elseif sym === :∇Md
-        return (q)->p.hamd.jac_mass_inv(eltype(p.init_params).(q), 
-            getindex(p.init_params, p.ps_index[:mass_inv]))
+        return p.hamd.jac_mass_inv
     elseif sym === :θ
         return p.init_params
     elseif sym === :θMd

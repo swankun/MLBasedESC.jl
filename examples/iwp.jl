@@ -4,11 +4,14 @@ using OrdinaryDiffEq
 using Plots; pyplot(display=false)
 
 const USE_J2 = !true
+const PRECISION = Float64
+const I1 = PRECISION(0.0455)
+const I2 = PRECISION(0.00425)
+const m3 = PRECISION(0.183*9.81)
+const b1 = PRECISION(0.001)
+const b2 = PRECISION(0.005)
 
 function create_true_hamiltonian()
-    I1 = 0.0455f0
-    I2 = 0.00425f0
-    m3 = 0.183f0*9.81f0
     mass_inv = inv(diagm(vcat(I1, I2)))
     pe(q) = m3*(cos(q[1])-one(eltype(q)))
     # pe(q) = begin
@@ -28,9 +31,8 @@ function input_mapping(x)
     # ]
     # [
     #     one(eltype(x))-cos(x[1]); 
-    #     x[1]
-    #     x[2]
     #     sin(x[1])
+    #     x[2]
     # ]
     # [x[1], one(eltype(x))-cos(x[2]), sin(x[2])]
     identity(x)
@@ -48,10 +50,9 @@ function input_jacobian(x)
     #     zero(T) one(T)-x[3]
     # ]
     # [
-    #     x[4] zero(T); 
-    #     one(T) zero(T); 
-    #     zero(T) one(T); 
+    #     x[2] zero(T); 
     #     one(T)-x[1] zero(T)
+    #     zero(T) one(T); 
     # ]
     # [
     #     one(T) zero(T)
@@ -62,31 +63,32 @@ function input_jacobian(x)
 end
 
 function create_learning_hamiltonian()
-    massd_inv = PSDNeuralNetwork(Float32, 2, 3, nin=2, num_hidden_nodes=32)
-    vd = NeuralNetwork(Float32, [2,32,64,16,1], symmetric=!true, fout=abs, dfout=sign)
+    massd_inv = PSDNeuralNetwork(PRECISION, 2, 3, nin=2, num_hidden_nodes=16)
+    # massd_inv = PSDMatrix(PRECISION,2,4)
+    vd = NeuralNetwork(PRECISION, [2,32,64,1], symmetric=!true, fout=x->x.^2, dfout=x->2x)
     # vd = SOSPoly(4, 1:1)
     Hamiltonian(massd_inv, vd, input_jacobian)
 end
 
 function create_partial_learning_hamiltonian()
-    # a1,a2,a3 = (0.001f0, -0.002f0, 0.005f0)
+    # a1,a2,a3 = PRECISION.(0.001, -0.002, 0.005)
     # massd = [a1 a2; a2 a3]
     # massd_inv = inv(massd)
-    massd_inv = PSDMatrix(Float32,2,4)
-    vd = SOSPoly(4, 1:1) # Float32[-6.3120513, 2.4831183f-5, -0.00027178923, -4.817491f-7, 0.0051580914, -0.0009012511, -0.0027414176, -5.4961457, 3.1027546, 4.6f-43]
-    # vd = IWPSOSPoly() # Float32[6.389714, 0.0, 0.2223909, 0.0, 0.006149394, 0.0049287872, 0.0, 0.0, 0.0, -0.30627432]
+    massd_inv = PSDMatrix(PRECISION,2,3)
+    vd = SOSPoly(3, 1:1) # PRECISION[-6.3120513, 2.4831183f-5, -0.00027178923, -4.817491f-7, 0.0051580914, -0.0009012511, -0.0027414176, -5.4961457, 3.1027546, 4.6f-43]
+    # vd = IWPSOSPoly() # PRECISION[6.389714, 0.0, 0.2223909, 0.0, 0.006149394, 0.0049287872, 0.0, 0.0, 0.0, -0.30627432]
     Hamiltonian(massd_inv, vd, input_jacobian)
 end
 
 function create_ida_pbc_problem()
-    input = vcat(-1.0f0,1.0f0)
-    input_annihilator = hcat(1.0f0,1.0f0)
+    input = PRECISION[-1.0,1.0]
+    input_annihilator = PRECISION[1.0 1.0]
     ham = create_true_hamiltonian()
     hamd = create_learning_hamiltonian()
     if USE_J2
         J2 = InterconnectionMatrix(
-            SkewSymNeuralNetwork(Float32, 2, nin=4),
-            SkewSymNeuralNetwork(Float32, 2, nin=4)
+            SkewSymNeuralNetwork(PRECISION, 2, nin=4),
+            SkewSymNeuralNetwork(PRECISION, 2, nin=4)
         )
         return IDAPBCProblem(ham, hamd, input, input_annihilator, J2)
     else
@@ -95,14 +97,11 @@ function create_ida_pbc_problem()
 end
 
 function create_known_ida_pbc()
-    I1 = 0.0455f0
-    I2 = 0.00425f0
-    m3 = 0.183f0*9.81f0
-    a1,a2,a3 = (0.001f0, -0.002f0, 0.005f0)
-    k1 = 0.1f0
+    a1,a2,a3 = PRECISION.(0.001, -0.002, 0.005)
+    k1 = PRECISION(0.1)
     γ2 = -I1*(a2+a3)/(I2*(a1+a2))
-    input = vcat(-1.0f0,1.0f0)
-    input_annihilator = hcat(1.0f0,1.0f0)
+    input = PRECISION[-1.0,1.0]
+    input_annihilator = PRECISION[1.0 1.0]
     
     mass_inv = inv(diagm(vcat(I1, I2)))
     pe(q) = m3*(cos(q[1]) - one(q[1]))
@@ -110,7 +109,7 @@ function create_known_ida_pbc()
 
     massd = [a1 a2; a2 a3]
     massd_inv = inv(massd)
-    ϕ(z) = 0.5f0*k1*z^2
+    ϕ(z) = 0.5*k1*z^2
     z(q) = q[2] + γ2*q[1]
     ped(q) = I1*m3/(a1+a2)*cos(q[1]) + ϕ(z(q))
     hamd = Hamiltonian(massd_inv, ped)
@@ -119,34 +118,31 @@ function create_known_ida_pbc()
 end
 
 
-function assemble_data(;input_mapping::Function=input_mapping, dq=Float32(pi/20), qmax=pi)
-    T = typeof(dq)
+function assemble_data(;input_mapping::Function=input_mapping, dq=pi/20, qmax=(pi, pi))
+    T = PRECISION
     data = Vector{T}[]
-    qmax = T(qmax)
-    q1range = range(-qmax, qmax, step=dq)
-    q2range = range(-qmax, qmax, step=dq)
+    q1max = first(qmax)
+    q2max = last(qmax)
+    q1range = range(-q1max, q2max, step=dq)
+    q2range = range(-q1max, q2max, step=dq)
     for q1 in q1range
         for q2 in q2range
-            push!(data, input_mapping([q1,q2]))
+            push!(data, input_mapping(T[q1,q2]))
         end
     end
     return data
 end
 
-function generate_trajectory(prob, x0, tf, θ=prob.init_params; umax=eltype(x0)(Inf), Kv=eltype(x0)(10), uscale=1)
-    I1 = eltype(x0)(0.0455)
-    I2 = eltype(x0)(0.00425)
-    m3 = eltype(x0)(0.183*9.81)
-    b1 = eltype(x0)(0.005)
-    b2 = eltype(x0)(0.01)
+function generate_trajectory(prob, x0, tf, θ=prob.init_params; umax=Inf, Kv=1.0, uscale=1.0)
+    T = eltype(x0)
     M = diagm(vcat(I1,I2))
-    policy = controller(prob, θ, damping_gain=Kv)
+    policy = controller(prob, θ, damping_gain=T(Kv))
     u(q,p) = clamp(policy(q,p), -umax, umax)
     f!(dx,x,p,t) = begin
         q1, q2, q1dot, q2dot = x
         qbar = input_mapping(x[1:2])
         momentum = M * [q1dot, q2dot]
-        effort = eltype(x0)(uscale)*u(qbar,momentum)
+        effort = T(uscale)*u(qbar,momentum)
         dx[1] = q1dot
         dx[2] = q2dot
         dx[3] = m3*sin(q1)/I1 - effort/I1 - b1/I1*q1dot
@@ -157,14 +153,12 @@ function generate_trajectory(prob, x0, tf, θ=prob.init_params; umax=eltype(x0)(
     ctrl = mapslices(x->u(input_mapping(x[1:2]), M*x[3:4]), Array(sol), dims=1) |> vec
     (sol, ctrl)
 end
-function generate_true_trajectory(prob, x0, tf, umax=eltype(x0)(Inf); ps=(3f0, 30f0, 0.001f0, 0.1f0))
-    I1 = 0.0455f0
-    I2 = 0.00425f0
-    m3 = 0.183f0*9.81f0
-    b1 = b2 = 0.0f0
+function generate_true_trajectory(prob, x0, tf, umax=Inf; ps=(3.0, 30.0, 0.001, 0.1))
+    T = eltype(x0)
     M = diagm(vcat(I1,I2))
     # policy = controller(prob, θ, damping_gain=Kv)
     # u(q,p) = clamp(policy(q,p), -umax, umax)
+    ps = T.(ps)
     f!(dx,x,p,t) = begin
         q1, q2, q1dot, q2dot = x
         qbar = input_mapping(x[1:2])
@@ -188,8 +182,8 @@ function generate_true_trajectory(prob, x0, tf, umax=eltype(x0)(Inf); ps=(3f0, 3
 end
 
 function test_hamd_gradient()
-    θ = Float32[pi*rand(), pi*rand()]
-    p = rand(Float32, 2)
+    θ = PRECISION[pi*rand(), pi*rand()]
+    p = rand(PRECISION, 2)
     q = input_mapping(θ)
     isapprox(
         ReverseDiff.gradient(x->prob.hamd(input_mapping(x),p), θ),
@@ -230,9 +224,6 @@ function bilinear_alternation()
     input = T.(vcat(-1.0,1.0))
     input_annihilator = T.(hcat(1.0,1.0))
 
-    I1 = T(0.0455)
-    I2 = T(0.00425)
-    m3 = T(0.183*9.81)
     mass_inv = T.(inv(diagm(vcat(I1, I2))))
     pe(q) = begin
         return -m3*q[1]
