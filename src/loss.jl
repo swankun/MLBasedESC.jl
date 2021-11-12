@@ -158,9 +158,9 @@ function optimize!(loss::PDELoss, paramvec, data; η=0.001, batchsize=64, maxite
             bstatus(nbatch, max_batch, batchloss)
             pmap!(batchgs, x->gradient(loss,x,paramvec), batch)
             grads = 1/npoints * sum(batchgs[1:npoints])
-            if isa(loss, PDELossVd) 
-                zeroexcept!(grads, :potential, loss.prob.ps_index)
-            end
+            # if isa(loss, PDELossVd) 
+            #     zeroexcept!(grads, :potential, loss.prob.ps_index)
+            # end
             if isa(loss.prob.hamd.potential, NeuralNetwork)
                 zerobias!(paramvec, loss.prob.hamd.potential, :potential, loss.prob.ps_index)
                 zerobias!(grads, loss.prob.hamd.potential, :potential, loss.prob.ps_index)
@@ -172,6 +172,8 @@ function optimize!(loss::PDELoss, paramvec, data; η=0.001, batchsize=64, maxite
             if !any(isnan.(grads))
                 Optimise.update!(optimizer, paramvec, grads)
                 nbatch += 1
+            else
+                @warn "∂ℓ/∂θ computations yielded NaNs."
             end
         end
         nepoch += 1
