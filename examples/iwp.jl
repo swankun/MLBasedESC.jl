@@ -8,8 +8,8 @@ const PRECISION = Float64
 const I1 = PRECISION(0.0455)
 const I2 = PRECISION(0.00425)
 const m3 = PRECISION(0.183*9.81)
-const b1 = PRECISION(0.00)
-const b2 = PRECISION(0.000)
+const b1 = PRECISION(0.005)
+const b2 = PRECISION(0.010)
 
 function create_true_hamiltonian()
     mass_inv = inv(diagm(vcat(I1, I2)))
@@ -68,7 +68,7 @@ function create_learning_hamiltonian()
     # a1,a2,a3 = PRECISION.((0.001, -0.002, 0.005))
     # massd = [a1 a2; a2 a3]
     # massd_inv = inv(massd)
-    vd = NeuralNetwork(PRECISION, [2,32,64,16,1], symmetric=!true, fout=abs, dfout=sign)
+    vd = NeuralNetwork(PRECISION, [2,16,48,1], symmetric=true, fout=x->x.^2, dfout=x->2x)
     # vd = SOSPoly(4, 1:1)
     Hamiltonian(massd_inv, vd)
 end
@@ -97,7 +97,9 @@ function create_ida_pbc_problem()
     else
         p = IDAPBCProblem(ham, hamd, input, input_annihilator)
     end
-    set_constant_Md!(p, p.init_params, diagm([I1,I2]))
+    # init_Md = diagm([I1,I2])
+    init_Md = [0.01 0.0; 0.0 0.02]
+    set_constant_Md!(p, p.init_params, init_Md)
     return p
 end
 
@@ -128,8 +130,8 @@ function assemble_data(;input_mapping::Function=input_mapping, dq=pi/20, qmax=(p
     data = Vector{T}[]
     q1max = first(qmax)
     q2max = last(qmax)
-    q1range = range(-q1max, q2max, step=dq)
-    q2range = range(-q1max, q2max, step=dq)
+    q1range = range(0, q2max, step=dq)
+    q2range = range(0, q2max, step=dq)
     for q1 in q1range
         for q2 in q2range
             push!(data, input_mapping(T[q1,q2]))
