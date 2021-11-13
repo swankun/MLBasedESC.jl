@@ -142,7 +142,7 @@ function PDELossCombined(prob::IDAPBCProblem)
     return PDELossCombined{typeof(prob),typeof(J),typeof(∂J)}(prob, J, ∂J)
 end
 
-function optimize!(loss::PDELoss, paramvec, data; η=0.001, batchsize=64, maxiters=1e4, tol=1e-4)
+function optimize!(loss::PDELoss, paramvec, data; η=0.001, batchsize=64, maxiters=1e4, tol=1e-4, freeze_Md=false, freeze_Vd=false)
     batchgs = Vector{typeof(paramvec)}(undef, batchsize)
     dataloader = Data.DataLoader(data; batchsize=batchsize, shuffle=true)
     max_batch = round(Int, dataloader.imax / dataloader.batchsize, RoundUp)
@@ -150,7 +150,10 @@ function optimize!(loss::PDELoss, paramvec, data; η=0.001, batchsize=64, maxite
     nepoch = 0; 
     train_loss = 1/length(data) * pmap(x->loss(x,paramvec), data)
     while nepoch < maxiters && train_loss > tol
-        estatus("PDE", nepoch, train_loss, maxiters)
+        losstypestr = "PDE"
+        losstypestr *= freeze_Vd ? ", Vd fixed" : ""
+        losstypestr *= freeze_Md ? ", Md fixed" : ""
+        estatus(losstypestr, nepoch, train_loss, maxiters)
         nbatch = 1
         for batch in dataloader
             npoints = length(batch)
@@ -158,9 +161,12 @@ function optimize!(loss::PDELoss, paramvec, data; η=0.001, batchsize=64, maxite
             bstatus(nbatch, max_batch, batchloss)
             pmap!(batchgs, x->gradient(loss,x,paramvec), batch)
             grads = 1/npoints * sum(batchgs[1:npoints])
-            # if isa(loss, PDELossVd) 
-            #     zeroexcept!(grads, :potential, loss.prob.ps_index)
-            # end
+            if freeze_Md
+                zeroexcept!(grads, :potential, loss.prob.ps_index)
+            end
+            if freeze_Vd
+                zeroexcept!(grads, :mass_inv, loss.prob.ps_index)
+            end
             if isa(loss.prob.hamd.potential, NeuralNetwork)
                 zerobias!(paramvec, loss.prob.hamd.potential, :potential, loss.prob.ps_index)
                 zerobias!(grads, loss.prob.hamd.potential, :potential, loss.prob.ps_index)

@@ -8,8 +8,8 @@ const PRECISION = Float64
 const I1 = PRECISION(0.0455)
 const I2 = PRECISION(0.00425)
 const m3 = PRECISION(0.183*9.81)
-const b1 = PRECISION(0.002)
-const b2 = PRECISION(0.006)
+const b1 = PRECISION(0.00)
+const b2 = PRECISION(0.000)
 
 function create_true_hamiltonian()
     mass_inv = inv(diagm(vcat(I1, I2)))
@@ -68,7 +68,7 @@ function create_learning_hamiltonian()
     # a1,a2,a3 = PRECISION.((0.001, -0.002, 0.005))
     # massd = [a1 a2; a2 a3]
     # massd_inv = inv(massd)
-    vd = NeuralNetwork(PRECISION, [2,32,64,16,1], symmetric=!true, fout=x->x.^2, dfout=x->2x)
+    vd = NeuralNetwork(PRECISION, [2,32,64,16,1], symmetric=!true, fout=abs, dfout=sign)
     # vd = SOSPoly(4, 1:1)
     Hamiltonian(massd_inv, vd)
 end
@@ -93,10 +93,12 @@ function create_ida_pbc_problem()
             SkewSymNeuralNetwork(PRECISION, 2, nin=4),
             SkewSymNeuralNetwork(PRECISION, 2, nin=4)
         )
-        return IDAPBCProblem(ham, hamd, input, input_annihilator, J2)
+        p = IDAPBCProblem(ham, hamd, input, input_annihilator, J2)
     else
-        return IDAPBCProblem(ham, hamd, input, input_annihilator)
+        p = IDAPBCProblem(ham, hamd, input, input_annihilator)
     end
+    set_constant_Md!(p, p.init_params, diagm([I1,I2]))
+    return p
 end
 
 function create_known_ida_pbc()
