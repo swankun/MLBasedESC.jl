@@ -97,8 +97,8 @@ function create_ida_pbc_problem()
     else
         p = IDAPBCProblem(ham, hamd, input, input_annihilator)
     end
-    # init_Md = diagm([I1,I2])
-    init_Md = [0.01 0.0; 0.0 0.02]
+    init_Md = diagm([I2,I1])
+    # init_Md = [0.001 0.0; 0.0 0.002]
     set_constant_Md!(p, p.init_params, init_Md)
     return p
 end
