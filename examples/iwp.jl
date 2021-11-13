@@ -8,8 +8,8 @@ const PRECISION = Float64
 const I1 = PRECISION(0.0455)
 const I2 = PRECISION(0.00425)
 const m3 = PRECISION(0.183*9.81)
-const b1 = PRECISION(0.005)
-const b2 = PRECISION(0.010)
+const b1 = PRECISION(0.001)
+const b2 = PRECISION(0.002)
 
 function create_true_hamiltonian()
     mass_inv = inv(diagm(vcat(I1, I2)))
@@ -144,7 +144,16 @@ function generate_trajectory(prob, x0, tf, θ=prob.init_params; umax=Inf, Kv=1.0
     T = eltype(x0)
     M = diagm(vcat(I1,I2))
     policy = controller(prob, θ, damping_gain=T(Kv))
-    u(q,p) = clamp(policy(q,p), -umax, umax)
+    u(q,p) = begin
+        q1, q2 = q
+        p1, p2 = p
+        if (1-cos(q1) < 1-cosd(10)) && abs(p1/I1) < 5
+            K = [-7.409595362575457, -0*0.05000000000000429, -1.1791663255097424, -0.03665716263249201]
+            return -dot(K, [sin(q1), sin(q2), p1/I1, p2/I2])
+        else
+            return clamp(policy(q,p), -umax, umax)
+        end
+    end
     f!(dx,x,p,t) = begin
         q1, q2, q1dot, q2dot = x
         qbar = input_mapping(x[1:2])
