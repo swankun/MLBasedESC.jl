@@ -10,7 +10,7 @@ using Random: randperm
 using Revise
 using SparseArrays
 
-using Convex, MosekTools
+using Convex, Mosek
 
 using Printf      
 using Formatting
