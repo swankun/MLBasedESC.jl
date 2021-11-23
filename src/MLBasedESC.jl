@@ -25,5 +25,7 @@ include("hamiltonian.jl")
 include("ida_pbc.jl")
 include("loss.jl")
 include("constants.jl")
+include("systems/abstractsys.jl")
+include("systems/iwp.jl")
 
 end

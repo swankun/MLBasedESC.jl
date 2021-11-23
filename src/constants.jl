@@ -1,9 +1,9 @@
 export PSDMatrix, gradient
 
 struct PSDMatrix{T} <: FunctionApproxmiator
-    n::Integer
+    n::Int
     θ::Vector{T}
-    nin::Integer
+    nin::Int
 end
 
 function PSDMatrix(T::DataType, n, nin)

@@ -174,13 +174,16 @@ function controller(prob::IDAPBCProblem{T}, θ=prob.init_params; damping_gain=T(
     Gtop = transpose(G)
     massd_inv_ps = getindex(θ, prob.ps_index[:mass_inv])
     ped_ps = getindex(θ, prob.ps_index[:potential])
+    H = prob.ham
+    Hd = prob.hamd
+    Uk = prob.interconnection
     u(q,p) = begin
-        mass_inv = prob.ham.mass_inv(q)
-        massd_inv = prob.hamd.mass_inv(q,massd_inv_ps)
+        mass_inv = H.mass_inv(q)
+        massd_inv = Hd.mass_inv(q,massd_inv_ps)
         massd = inv(massd_inv)
-        J2 = sum(T(1/2)*prob.interconnection[j](q)*p[j] for j in 1:lastindex(p))
-        Gu_es = gradient(prob.ham, q, p) .- 
-            (massd*mass_inv)*gradient(prob.hamd, q, p, massd_inv_ps, ped_ps) .+ (J2*massd_inv*p)
+        J2 = sum(T(1/2)*Uk[j](q)*p[j] for j in 1:lastindex(p))
+        Gu_es = gradient(H, q, p) .- 
+            (massd*mass_inv)*gradient(Hd, q, p, massd_inv_ps, ped_ps) .+ (J2*massd_inv*p)
         u_es = dot( inv(Gtop*G)*Gtop, Gu_es )
         u_di = -damping_gain*dot(G, T(1)*massd_inv*p)
         return u_es + u_di
