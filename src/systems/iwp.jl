@@ -4,11 +4,11 @@ const _I1 = 0.0455
 const _I2 = 0.00425
 const _m3 = 0.183*9.81
 
-struct InertiaWheelPendulum{T,MT,TPROB} <: IDAPBCSystem
+struct InertiaWheelPendulum{T,TPROB} <: IDAPBCSystem
     I1::T
     I2::T
     m3::T
-    M::MT
+    M::Matrix{T}
     p::TPROB
 end
 
@@ -33,7 +33,7 @@ function InertiaWheelPendulum(;I1=_I1, I2=_I2, m3=_m3, pretrain=true)
         p.Md.θ[:] = p.init_params[p.ps_index[:mass_inv]]
     end
 
-    return InertiaWheelPendulum{T,typeof(M),typeof(p)}(I1,I2,m3,M,p)
+    return InertiaWheelPendulum{T,typeof(p)}(I1,I2,m3,M,p)
 end
 
 function Base.show(io::IO, sys::InertiaWheelPendulum)
@@ -58,8 +58,7 @@ function train!(sys::InertiaWheelPendulum)
     θ = MLBasedESC.params(sys.p)
     try
         optimize!(loss, θ, data)
-    catch e
-        !isa(e, InterruptException) && rethrow(e)
+    finally
         sys.p.init_params[:] = θ
     end
     nothing
@@ -85,8 +84,8 @@ function _dynamics!(sys::InertiaWheelPendulum, dx::Vector, x::Vector; effort=0.0
     q1, q2, q1dot, q2dot = x
     dx[1] = q1dot
     dx[2] = q2dot
-    dx[3] = m3*sin(q1)/I1 - eltype(x)(effort)/I1 - eltype(x)(b1)/I1*q1dot
-    dx[4] = eltype(x)(effort)/I2 - eltype(x)(b2)/I2*q2dot
+    dx[3] = m3*sin(q1)/I1 - effort/I1 - b1/I1*q1dot
+    dx[4] = effort/I2 - b2/I2*q2dot
     nothing
 end
 
