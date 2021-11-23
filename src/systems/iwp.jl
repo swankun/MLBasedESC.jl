@@ -9,7 +9,7 @@ struct InertiaWheelPendulum{T,TPROB} <: IDAPBCSystem
     I2::T
     m3::T
     M::Matrix{T}
-    p::TPROB
+    idapbc::TPROB
 end
 
 function InertiaWheelPendulum(;I1=_I1, I2=_I2, m3=_m3, pretrain=true)
@@ -24,20 +24,20 @@ function InertiaWheelPendulum(;I1=_I1, I2=_I2, m3=_m3, pretrain=true)
 
     input = T[-1.0,1.0]
     input_annihilator = T[1.0 1.0]
-    p = IDAPBCProblem(H, Hd, input, input_annihilator)
+    idapbc = IDAPBCProblem(H, Hd, input, input_annihilator)
     init_Md = diagm([0.002,0.002])
-    set_constant_Md!(p, p.init_params, init_Md)
+    set_constant_Md!(idapbc, idapbc.init_params, init_Md)
 
     if pretrain
-        p.init_params[:] = _pretrained_params
-        p.Md.θ[:] = p.init_params[p.ps_index[:mass_inv]]
+        idapbc.init_params[:] = _pretrained_params
+        idapbc.Md.θ[:] = idapbc.init_params[idapbc.ps_index[:mass_inv]]
     end
 
-    return InertiaWheelPendulum{T,typeof(p)}(I1,I2,m3,M,p)
+    return InertiaWheelPendulum{T,typeof(idapbc)}(I1,I2,m3,M,idapbc)
 end
 
 function Base.show(io::IO, sys::InertiaWheelPendulum)
-    show(io, sys.p)
+    show(io, sys.idapbc)
 end
 
 function train!(sys::InertiaWheelPendulum)
@@ -54,19 +54,19 @@ function train!(sys::InertiaWheelPendulum)
         end
     end
 
-    loss = PDELossVd(sys.p)
-    θ = MLBasedESC.params(sys.p)
+    loss = PDELossVd(sys.idapbc)
+    θ = MLBasedESC.params(sys.idapbc)
     try
         optimize!(loss, θ, data)
     finally
-        sys.p.init_params[:] = θ
+        sys.idapbc.init_params[:] = θ
     end
     nothing
 end
 
 function policy(sys::InertiaWheelPendulum, Kv=1e-3)
     I1, I2 = (sys.I1, sys.I2)
-    swingup = controller(sys.p, damping_gain=Kv)
+    swingup = controller(sys.idapbc, damping_gain=Kv)
     K_lqr = _lqr_gains
     u(q,p) = begin
         q1, q2 = q
