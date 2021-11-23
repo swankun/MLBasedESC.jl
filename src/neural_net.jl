@@ -9,12 +9,15 @@ struct LayerParamIndices
     b    :: UnitRange{IndexType}
 end
 
-mutable struct NeuralNetwork{T<:Real, ChainType<:Union{Chain, FastChain}, LayerType<:Union{Dense, FastDense}, F1, F2, F3}
+abstract type FunctionApproxmiator end
+
+struct NeuralNetwork{T<:Real, ChainType<:Union{Chain}, LayerType<:Union{Dense}, F1, F2, F3, F4} <: FunctionApproxmiator
     depth  :: IndexType
     widths :: Vector{IndexType}
     σ      :: F1
     σ′     :: F2
-    dfout  :: F3
+    fout   :: F3
+    dfout  :: F4
     chain  :: ChainType
     layers :: Tuple{Vararg{LayerType}}
     θ      :: Vector{T}
@@ -23,34 +26,32 @@ end
 
 function NeuralNetwork( T::Type,
                         widths::Vector{Int}, 
-                        σ::Function=elu, 
+                        σ::Function=elu,
                         σ′::Function=delu ;
                         symmetric::Bool=false,
                         fout::Function=identity,
                         dfout::Function=one )
     
     depth = length(widths)-1
+    inout = ((widths[i-1], widths[i]) for i in 2:depth+1)
     layers = Tuple([
-        FastDense(
+        Dense(
             widths[i-1], widths[i], i==depth+1 ? fout : σ,
-            # widths[i-1], widths[i], i==depth+1 ? relu : σ,
-            # widths[i-1], widths[i], i==depth+1 ? x->x.^2 : σ,
-            initW=glorot_uniform, initb=glorot_uniform
+            bias=true, init=(x...)->T.(glorot_uniform(x...))
         ) for i in 2:depth+1
     ])
-    chain = FastChain(
-        symmetric ? (x,p) -> x.^2 : (x,p) -> identity(x), 
+    chain = Chain(
+        symmetric ? (x) -> x.^2 : identity, 
         layers...
     )
-    θ = initial_params(chain)
 
-    θ_lens = [l.in * l.out + l.out for l in layers]
+    θ_lens = [in * out + out for (in,out) in inout]
     θ_begin = [1; cumsum(θ_lens).+1]
     θ_end = cumsum(θ_lens)
     inds = LayerParamIndices[]
-    for (i, j, layer, len) in zip(θ_begin, θ_end, layers, θ_lens)
-        nin = layer.in
-        nout = layer.out
+    for (i, j, layer, len, ldim) in zip(θ_begin, θ_end, layers, θ_lens, inout)
+        nin = first(ldim)
+        nout = last(ldim)
         flat = i:j 
         W = collect(Int, reshape(1:(nin*nout), nout, nin))
         b = (nin*nout+1):len
@@ -61,43 +62,34 @@ function NeuralNetwork( T::Type,
     end
     @assert length(inds) == depth
 
-    NeuralNetwork{T, typeof(chain), eltype(layers), typeof(σ), typeof(σ′), typeof(dfout)}(
-        depth, widths, σ, σ′, dfout, chain, layers, θ, inds
+    θ = vcat(map(x->vcat(x...), collect(Flux.params(chain)))...)
+
+    NeuralNetwork{T, typeof(chain), eltype(layers), typeof(σ), typeof(σ′), typeof(fout), typeof(dfout)}(
+        depth, widths, σ, σ′, fout, dfout, chain, layers, θ, inds
     )
 end
 
 NeuralNetwork(widths::Vector{Int}) = NeuralNetwork(Float32, widths)
 
 function (net::NeuralNetwork)(x, p=net.θ)
-    net.chain(x, p)
-    # net.chain([1.0], p)
+    net.fout.(_applychain(net, p, net.depth, x))
 end
 
 function Base.show(io::IO, net::NeuralNetwork{T,C,D}) where {T,C,D}
-    print(io, "NeuralNetwork{$(T),$(C),$(D)}, \n")
-    print(io, "widths = $(Int.(net.widths))"); print(io, ", \n")
-    print(io, "σ = "); show(io, net.σ); print(io, " ")
+    print(io, "NeuralNetwork{$(T),symmetric=$(_issymmetric(net))}")
+    print(io, ", widths = $(Int.(net.widths))")
+    print(io, ", σ = "); show(io, net.σ); print(io, " ")
 end
 
-
-
-
-function set_params(net::NeuralNetwork, p::Vector{<:Real})
-    net.θ = p
-end
+precisionof(net::NeuralNetwork{T}) where {T} = T
 
 function get_weights(net::NeuralNetwork, θ, layer::Integer)
     θ[ net.inds[layer].flat ][ net.inds[layer].W ]
-    # @view θ[ net.inds[layer].flat ][ net.inds[layer].W ]  # breaks ReverseDiff w.r.t θ
 end
 
 function get_biases(net::NeuralNetwork, θ, layer::Integer)
     θ[ net.inds[layer].flat ][ net.inds[layer].b ]
-    # @view θ[ net.inds[layer].flat ][ net.inds[layer].b ] # breaks ReverseDiff w.r.t θ
 end
-
-
-
 
 function _applychain(net::NeuralNetwork, θ, layers::Tuple, input)
     get_weights(net, θ, first(layers)+1) * 
@@ -106,22 +98,18 @@ function _applychain(net::NeuralNetwork, θ, layers::Tuple, input)
 end
 function _applychain(net::NeuralNetwork, θ, ::Tuple{}, input)
     get_weights(net, θ, 1) * 
-        net.chain.layers[1](input, θ) + 
+        net.chain.layers[1](input) + 
         get_biases(net, θ, 1)
 end
 _applychain(net::NeuralNetwork, θ, i::Int, x) = _applychain(net, θ, Tuple(i-1:-1:1), x)
 
 function _issymmetric(net::NeuralNetwork)
     input = rand(eltype(net.θ), net.widths[1])
-    !(net.chain.layers[1](input, net.θ) == input)
+    !(net.chain.layers[1](input) == input)
 end
 Zygote.@nograd _issymmetric
 
-
-
-
 function gradient(net::NeuralNetwork, x, θ=net.θ)
-    fout = x->x.^2
     ∂NNx = identity.( 
         get_weights(net, θ, net.depth) * 
         prod(net.σ′.(_applychain(net, θ, i, x)) .* get_weights(net, θ, i) for i = net.depth-1:-1:1) 
@@ -129,8 +117,8 @@ function gradient(net::NeuralNetwork, x, θ=net.θ)
     if _issymmetric(net)
         ∂NNx = ∂NNx .* reduce(hcat, [fill(eltype(x)(2)*y, last(net.widths)) for y in x])
     end
+    fout = net.layers[end].σ
     if fout != identity
-        # return ∂NNx
         ∂NNx = net.dfout.(_applychain(net, θ, net.depth, x)) .* ∂NNx
     end
     return ∂NNx
@@ -141,9 +129,7 @@ function hessian(net::NeuralNetwork, x, θ=net.θ)
 end
 
 
-
-
-mutable struct PSDNeuralNetwork{N<:NeuralNetwork}
+struct PSDNeuralNetwork{N<:NeuralNetwork} <: FunctionApproxmiator
     n::Int
     net::N
 end 
@@ -167,17 +153,16 @@ function PSDNeuralNetwork( T::Type,
 end
 
 function (S::PSDNeuralNetwork)(x, p=S.net.θ)
-    L = S.net.chain(x, p) |> vec2tril
+    L = S.net(x, p) |> vec2tril
     return L*L' + eltype(x)(1e-4)*I(S.n)
 end
 
 function Base.show(io::IO, S::PSDNeuralNetwork)
-    print(io, "$(S.n) × $(S.n) positive semidefinite matrix NeuralNetwork: ")
-    print(io, "widths = "); show(io, S.net.widths); print(io, ", ")
-    print(io, "σ = "); show(io, S.net.σ); print(io, " ")
+    print(io, "$(S.n)×$(S.n) PSDNeuralNetwork")
+    print(io, ", widths = "); show(io, S.net.widths);
+    print(io, ", σ = "); show(io, S.net.σ);
 end
 
-set_params(S::PSDNeuralNetwork, p::Vector{<:Real}) = set_params(S.net, p)
 get_weights(S::PSDNeuralNetwork, θ, layer::Integer) = get_weights(S.net, θ, layer)
 get_biases(S::PSDNeuralNetwork, θ, layer::Integer) = get_biases(S.net, θ, layer)
 
@@ -186,14 +171,13 @@ function gradient(S::PSDNeuralNetwork, x, θ=S.net.θ)
     Returns Array{Matrix{T}} with 'nin' elements, and the ith matrix is
     the gradient of output w.r.t. the ith input
     """
-    L = S.net.chain(x, θ) |> vec2tril
+    L = S.net(x, θ) |> vec2tril
     ∂L∂x = [ vec2tril(col) for col in eachcol(gradient(S.net, x, θ)) ]
     return [ (L * dL') + (dL * L') for dL in ∂L∂x ]
 end
 
 
-
-mutable struct SkewSymNeuralNetwork{N<:NeuralNetwork}
+struct SkewSymNeuralNetwork{N<:NeuralNetwork} <: FunctionApproxmiator
     n::Int
     net::N
     odd_function::Bool
@@ -220,21 +204,20 @@ end
 
 function (S::SkewSymNeuralNetwork)(x, p=S.net.θ)
     if S.odd_function
-        l = (S.net.chain(x, p) - S.net.chain(-x, p)) / 2
+        l = (S.net(x, p) - S.net(-x, p)) / 2
     else
-        l = S.net.chain(x, p)
+        l = S.net(x, p)
     end
     L = vec2tril(l, true)
     return L - L'
 end
 
 function Base.show(io::IO, S::SkewSymNeuralNetwork)
-    print(io, "$(S.n) × $(S.n) positive semidefinite matrix NeuralNetwork: ")
-    print(io, "widths = "); show(io, S.net.widths); print(io, ", ")
-    print(io, "σ = "); show(io, S.net.σ); print(io, " ")
+    print(io, "$(S.n)×$(S.n) skew-symmetric NeuralNetwork")
+    print(io, ", widths = "); show(io, S.net.widths);
+    print(io, ", σ = "); show(io, S.net.σ)
 end
 
-set_params(S::SkewSymNeuralNetwork, p::Vector{<:Real}) = set_params(S.net, p)
 get_weights(S::SkewSymNeuralNetwork, θ, layer::Integer) = get_weights(S.net, θ, layer)
 get_biases(S::SkewSymNeuralNetwork, θ, layer::Integer) = get_biases(S.net, θ, layer)
 

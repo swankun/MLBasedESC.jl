@@ -55,5 +55,14 @@ function vec2tril(v::AbstractVector, ::Bool)
     diag_ind = [Int(i*(i-1)/2) for i=2:M]
     sum( [diagm(-i-1 => getindex(v, diag_ind[1+i:end] .- i)) for i=0:M-1] )
 end
-
-
+function tril2vec(Q::Matrix)
+    return Q[tril2vec_perm(size(Q,1))]
+end
+function tril2vec_perm(M::Integer)
+    N = floor(Int, ((2*M+1)^2 - 1)/8)
+    R = vec2tril(1:N)
+    p = sortperm(vec(R))
+    start = findfirst(isone, p)
+    return p[start:end]
+end
+tril2vec(L::LowerTriangular) = tril2vec(L.data)

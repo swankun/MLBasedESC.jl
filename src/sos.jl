@@ -1,22 +1,26 @@
-export SOSPoly, SymmetricSOSPoly, gradient, set_params, hessian
+export SOSPoly, SymmetricSOSPoly, gradient, hessian
+export IWPSOSPoly
 
-abstract type AbstractSOSPoly end
+abstract type AbstractSOSPoly <: FunctionApproxmiator end
 
-mutable struct SOSPoly{VA, BA, CO<:AbstractVector{<:Real}} <: AbstractSOSPoly
+struct SOSPoly{VA, BA, BA2, CO<:AbstractVector{<:Real}} <: AbstractSOSPoly
     dim::Int
     degree::Int
     vars::VA
     mono::BA
+    ∇x_mono::BA2
     θ::CO
 end
 
-function SOSPoly(n::Int, degree::Int)
+function SOSPoly(n::Int, degrees::UnitRange{Int})
     @polyvar q[1:n]
-    mono = monomials(q, 0:degree)
+    mono = monomials(q, degrees)
+    ∇x_mono = differentiate(mono, q)
     m = length(mono)
     θ = glorot_uniform(Int(m*(m+1)/2))
-    SOSPoly{typeof(q), typeof(mono), typeof(θ)}(n, degree, q, mono, θ)
+    SOSPoly{typeof(q), typeof(mono), typeof(∇x_mono), typeof(θ)}(n, last(degrees), q, mono, ∇x_mono, θ)
 end
+SOSPoly(n::Int, degree::Int) = SOSPoly(n, 0:degree)
 
 function (P::SOSPoly)(x, θ=P.θ) 
     L = vec2tril(θ)
@@ -29,13 +33,17 @@ function coeff_matrix(P::SOSPoly, θ)
     return vec2tril(θ)
 end
 
+monsub(P::SOSPoly, x) = [v(P.vars=>x) for v in P.mono]
+function ∂mon∂q(P::SOSPoly, x)
+    [d(P.vars=>x) for d in P.∇x_mono]
+end
+
 function gradient(P::SOSPoly, x, θ=P.θ)
     L = coeff_matrix(P, θ)
-    X = P.mono
-    v = L'*X
-    sos = dot(v, v)
-    expr = differentiate.(sos, P.vars)
-    val = reduce(hcat, p(P.vars=>x) for p in expr)
+    ∂X = ∂mon∂q(P,x)
+    expr = 2 * ∂X' * (L*L') * monsub(P,x)
+    transpose(expr)
+    # reduce(hcat, e for e in expr)
 end
 
 function hessian(P::SOSPoly, x, θ=P.θ)
@@ -48,13 +56,63 @@ function hessian(P::SOSPoly, x, θ=P.θ)
     val = [v(P.vars=>x) for v in reduce(hcat, expr)]    
 end
 
-function set_params(P::AbstractSOSPoly, p::Vector{<:Real})
-    P.θ = p
-end
-
 nmons(n,d) = binomial(n+d-1,d)
 
-mutable struct SymmetricSOSPoly{VA, BA, CO} <: AbstractSOSPoly
+###############################################################################
+
+struct IWPSOSPoly{VA,BA,CO} <: AbstractSOSPoly
+    dim::Int
+    degree::Int
+    vars::VA
+    mono::BA
+    θ::CO
+end
+
+function IWPSOSPoly()
+    n = 4
+    degrees = 1:1
+    @polyvar q[1:n]
+    mono = monomials(q, degrees)
+    m = length(mono)
+    θ = glorot_uniform(Int(m*(m+1)/2))
+    θ[[2,4,7,8,9]] .= zero(eltype(θ))
+    IWPSOSPoly{typeof(q), typeof(mono), typeof(θ)}(n, last(degrees), q, mono, θ)
+end
+
+function (P::IWPSOSPoly)(x, θ=P.θ) 
+    L = coeff_matrix(P,θ)
+    X = P.mono
+    v = L'*X
+    sos = dot(v, v)(P.vars=>x)
+end
+
+function coeff_matrix(P::IWPSOSPoly, θ)
+    L = vec2tril(θ)
+    L[2:4,1] .= zero(eltype(L))
+    L[end,1:3] .= zero(eltype(L))
+    L[end,end] = L[1,1]
+    return L
+end
+
+monsub(P::IWPSOSPoly, x) = [v(P.vars=>x) for v in P.mono]
+
+function ∂mon∂q(P::IWPSOSPoly, x)
+    ∂X = transpose(differentiate(P.mono, P.vars))
+    [d(P.vars=>x) for d in ∂X]
+end
+
+function gradient(P::IWPSOSPoly, x, θ=P.θ)
+    L = coeff_matrix(P, θ)
+    ∂X = ∂mon∂q(P,x)
+    expr = 2 * ∂X * (L*L') * monsub(P,x)
+    transpose(expr)
+    # reduce(hcat, e for e in expr)
+end
+
+
+###############################################################################
+
+struct SymmetricSOSPoly{VA, BA, CO} <: AbstractSOSPoly
     dim::Int
     degree::Int
     vars::VA
