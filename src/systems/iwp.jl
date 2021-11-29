@@ -31,6 +31,7 @@ function InertiaWheelPendulum(;I1=_I1, I2=_I2, m3=_m3, pretrain=true)
     if pretrain
         idapbc.init_params[:] = _pretrained_params
         idapbc.Md.θ[:] = idapbc.init_params[idapbc.ps_index[:mass_inv]]
+        idapbc.Vd.θ[:] = idapbc.init_params[idapbc.ps_index[:potential]]
     end
 
     return InertiaWheelPendulum{T,typeof(idapbc)}(I1,I2,m3,M,idapbc)
