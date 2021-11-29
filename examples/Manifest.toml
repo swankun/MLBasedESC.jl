@@ -93,9 +93,9 @@ version = "1.16.1+0"
 
 [[ChainRules]]
 deps = ["ChainRulesCore", "Compat", "LinearAlgebra", "Random", "RealDot", "Statistics"]
-git-tree-sha1 = "035ef8a5382a614b2d8e3091b6fdbb1c2b050e11"
+git-tree-sha1 = "65a0826ac25869556070076459925d1700316aab"
 uuid = "082447d4-558c-5d27-93f4-14fc19e9eca2"
-version = "1.12.1"
+version = "1.14.0"
 
 [[ChainRulesCore]]
 deps = ["Compat", "LinearAlgebra", "SparseArrays"]
@@ -597,9 +597,9 @@ version = "4.7.0"
 
 [[LLVMExtra_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg"]
-git-tree-sha1 = "9436f02a0c9f726d914cc6539f87850701be18fc"
+git-tree-sha1 = "c5fc4bef251ecd37685bea1c4068a9cfa41e8b9a"
 uuid = "dad2f222-ce93-54a1-a47d-0025e8a3acab"
-version = "0.0.12+0"
+version = "0.0.13+0"
 
 [[LZO_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg"]
@@ -734,7 +734,9 @@ version = "2.1.2"
 
 [[MLBasedESC]]
 deps = ["BenchmarkTools", "Convex", "Distributions", "DynamicPolynomials", "Flux", "Formatting", "LinearAlgebra", "Mosek", "MultivariatePolynomials", "Printf", "Random", "ReverseDiff", "Revise", "SparseArrays", "Zygote"]
-path = "/home/wankun/.julia/dev/MLBasedESC"
+git-tree-sha1 = "2fd2e1984135aff69df0888d97ebf4b566781882"
+repo-rev = "master"
+repo-url = "https://github.com/swankun/MLBasedESC.jl"
 uuid = "0d2b134a-22b1-4965-bb14-6de4eebc6429"
 version = "0.1.0"
 
@@ -1483,9 +1485,9 @@ version = "1.5.0+0"
 
 [[Zygote]]
 deps = ["AbstractFFTs", "ChainRules", "ChainRulesCore", "DiffRules", "Distributed", "FillArrays", "ForwardDiff", "IRTools", "InteractiveUtils", "LinearAlgebra", "MacroTools", "NaNMath", "Random", "Requires", "SpecialFunctions", "Statistics", "ZygoteRules"]
-git-tree-sha1 = "2c30f2df0ba43c17e88c8b55b5b22c401f7cde4e"
+git-tree-sha1 = "76475a5aa0be302c689fd319cd257cd1a512fb3c"
 uuid = "e88e6eb3-aa80-5325-afca-941959d7151f"
-version = "0.6.30"
+version = "0.6.32"
 
 [[ZygoteRules]]
 deps = ["MacroTools"]
