@@ -83,6 +83,7 @@ function unstack(ts::NTuple{N,FastChain}, ps) where N
 end
 unstack(ts::Tuple{}, ps) = ()
 unstack(p::IDAPBCProblem, ps) = unstack(trainable(p), ps)
+unstack(p::IDAPBCProblem, ::Nothing) = nothing
 paramstack(p::IDAPBCProblem) = vcat(DiffEqFlux.initial_params.(trainable(p))...)
 
 
