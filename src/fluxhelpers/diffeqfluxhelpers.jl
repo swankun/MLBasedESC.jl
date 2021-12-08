@@ -13,17 +13,6 @@ derivative(f::typeof(tanh)) = dtanh
 derivative(f::typeof(identity)) = (x)->one(eltype(x))
 derivative(::typeof(square)) = (x,_=nothing)->2x
 
-Cmodel = FastChain(
-    FastDense(2, 10, elu),
-    FastDense(10, 5, elu),
-    FastDense(5, 3),
-)
-l = Cmodel.layers
-x = rand(2)
-p = initial_params(Cmodel);
-
-
-
 struct ActivationMode{T} end
 const NoActivation = ActivationMode{:NoActivation}()
 const DefaultActivation = ActivationMode{:Default}()
@@ -58,8 +47,6 @@ function chainGrad(fs::Tuple, x, p)
     y = _applychain(fs,x,p)
     ps = last(paramslice(fs,p))
     W, _ = param2Wb(last(fs), ps)
-    # σ′ = derivative(last(fs).σ)
-    # return (σ′.(y) .* W) * chainGrad(front(fs), x, p[1:end-length(ps)])
     σbar = derivative(last(fs).σ).(y)
     return hadamard(σbar, W) * chainGrad(front(fs), x, p[1:end-length(ps)])
 end

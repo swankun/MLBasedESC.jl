@@ -6,6 +6,7 @@ version = "0.1.0"
 [deps]
 BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
 Convex = "f65535da-76fb-5f13-bab9-19810c17039a"
+DiffEqFlux = "aae7a2af-3d4f-5e19-a356-7da93b79d9d0"
 Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
 DynamicPolynomials = "7c1d4256-1411-5781-91ec-d7bc3513ac07"
 Flux = "587475ba-b771-5e3f-ad9e-33799f191a9c"
