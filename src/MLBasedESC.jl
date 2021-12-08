@@ -16,7 +16,7 @@ using Revise
 # using Formatting
 # using Random
 
-# using DynamicPolynomials
+using DynamicPolynomials
 
 # include("utils.jl")
 # include("neural_net.jl")
@@ -30,5 +30,6 @@ using Revise
 
 include("fluxhelpers/fluxhelpers.jl")
 include("idapbc.jl")
+include("soslayers.jl")
 
 end

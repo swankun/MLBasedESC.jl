@@ -60,7 +60,7 @@ function test1_fastchain()
     θ = paramstack(P)
     L1(q,θ)
     L2(q,θ)
-    dL1(q,ps) = Flux.gradient(_2->L1(q,_2), ps)[1]
+    dL1(q,ps) = ReverseDiff.gradient(_2->L1(q,_2), ps)
     dL2(q,ps) = Flux.gradient(_2->L2(q,_2), ps)[1]
     unstack(P, dL1(q,θ))
     unstack(P, dL2(q,θ))

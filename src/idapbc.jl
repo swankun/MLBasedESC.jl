@@ -60,13 +60,11 @@ end
 
 hasfreevariables(::IDAPBCProblem{J2}) where {J2} = J2===Nothing
 
-function kineticpde(M⁻¹::M, Md::M, Md⁻¹::M, ∇M⁻¹::M, ∇Md⁻¹::M, G⊥, J2=0) where 
-    {M<:Matrix}
+function kineticpde(M⁻¹, Md, Md⁻¹, ∇M⁻¹, ∇Md⁻¹, G⊥, J2=0) 
     return G⊥ * (∇M⁻¹' - Md*M⁻¹*∇Md⁻¹' + J2*Md⁻¹)
 end
 
-function potentialpde(M⁻¹::M, Md::M, ∇V::V, ∇Vd::V, G⊥) where 
-    {M<:Matrix, V<:Vector} 
+function potentialpde(M⁻¹, Md, ∇V, ∇Vd, G⊥)
     return first(G⊥ * (∇V - Md*M⁻¹*∇Vd))
 end
 
