@@ -1,7 +1,7 @@
 export IDAPBCProblem, PDELossKinetic, PDELossPotential
 export kineticpde, potentialpde
 export trainable, unstack, paramstack
-export interconnection, controller
+export hamiltonian, hamiltoniand, interconnection, controller
 
 const UFA = Union{T,C} where {T<:Function, C<:Chain}
 const J2Chain = NTuple{N,<:Chain} where {N}
@@ -105,14 +105,14 @@ function _∇Md⁻¹(P::IDAPBCProblem{J2,M,MD}, q, ps) where {J2,M,MD<:Function}
     jacobian(P.Md⁻¹, q, θMd)
 end
 function _∇Vd(P::IDAPBCProblem{J2,M,MD,V,VD}, q) where {J2,M,MD,V,VD<:Chain}
-    if isone(length(last(P.Vd.layers).bias))
+    if isequal(length(last(P.Vd.layers).bias), P.N)
         return jacobian(P.Vd, q)[:]
     else
         return P.Vd(q)
     end
 end
 function _∇Vd(P::IDAPBCProblem{J2,M,MD,V,VD}, q, ps) where {J2,M,V,MD<:Matrix,VD<:Function}
-    if VD<:FastChain && !isone(last(P.Vd.layers).out)
+    if VD<:FastChain && isequal(last(P.Vd.layers).out, P.N)
         return P.Vd(q, ps)
     else
         return jacobian(P.Vd, q, ps)[:]
@@ -120,7 +120,7 @@ function _∇Vd(P::IDAPBCProblem{J2,M,MD,V,VD}, q, ps) where {J2,M,V,MD<:Matrix,
 end
 function _∇Vd(P::IDAPBCProblem{J2,M,MD,V,VD}, q, ps) where {J2,M,V,MD<:Function,VD<:Function}
     _, θVd = unstack(P,ps)
-    if VD<:FastChain && !isone(last(P.Vd.layers).out)
+    if VD<:FastChain && isequal(last(P.Vd.layers).out, P.N)
         return P.Vd(q, ps)
     else
         return jacobian(P.Vd, q, θVd)[:]
@@ -144,24 +144,35 @@ function interconnection(P::IDAPBCProblem{<:J2FChain}, x, ps)
     end
 end
 
+function hamiltonian(P::IDAPBCProblem, x)
+    N = P.N
+    q, p = x[1:N], x[N+1:2N]
+    dot(p, _M⁻¹(P, q)*p)/2 + first(P.V(q))
+end
 function ∇H(P::IDAPBCProblem, x)
     N = P.N
     q, p = x[1:N], x[N+1:2N]
     ∇M⁻¹ = _∇M⁻¹(P, q)
-    (sum(∇M⁻¹.*p)'*p)/2 + jacobian(P.V, q)[:]
+    (mapreduce(*,+,∇M⁻¹,p)'*p)/2 + jacobian(P.V, q)[:]
 end
 
+function hamiltoniand(P::IDAPBCProblem, x)
+    !isone(length(last(P.Vd.layers).bias)) && return NaN
+    N = P.N
+    q, p = x[1:N], x[N+1:2N]
+    dot(p, _Md⁻¹(P, q)*p)/2 + first(P.Vd(q))
+end
 function ∇Hd(P::IDAPBCProblem, x)
     N = P.N
     q, p = x[1:N], x[N+1:2N]
     ∇Md⁻¹ = _∇Md⁻¹(P, q)
-    (sum(∇Md⁻¹.*p)'*p)/2 + _∇Vd(P, q)
+    (mapreduce(*,+,∇Md⁻¹,p)'*p)/2 + _∇Vd(P, q)
 end
 function ∇Hd(P::IDAPBCProblem, x, ps)
     N = P.N
     q, p = x[1:N], x[N+1:2N]
     ∇Md⁻¹ = _∇Md⁻¹(P, q, ps)
-    (sum(∇Md⁻¹.*p)'*p)/2 + _∇Vd(P, q, ps)
+    (mapreduce(*,+,∇Md⁻¹,p)'*p)/2 + _∇Vd(P, q, ps)
 end
 
 function controller(P::IDAPBCProblem, x; kv=1)
@@ -260,4 +271,42 @@ function (L::PDELossPotential)(q,ps)
     M⁻¹ = _M⁻¹(p, q)
     Md⁻¹ = _Md⁻¹(p, q, ps)
     potentialpde(M⁻¹, Md⁻¹, ∇V, ∇Vd, p.G⊥)
+end
+
+struct PotentialHessianSymLoss{P} <: IDAPBCLoss
+    prob::P 
+    function PotentialHessianSymLoss(p::IDAPBCProblem{J,M,MD,V,VD}) where 
+        {J,M,MD,V,VD<:Chain}
+        if isequal(length(last(p.Vd.layers).bias), p.N)
+            new{typeof(p)}(p)
+        else
+            error("Not applicable for this type of IDAPBCProblem")
+        end
+    end
+    function PotentialHessianSymLoss(p::IDAPBCProblem{J,M,MD,V,VD}) where 
+        {J,M,MD,V,VD<:FastChain}
+        if isequal(last(p.Vd.layers).out, p.N)
+            new{typeof(p)}(p)
+        else
+            error("Not applicable for this type of IDAPBCProblem")
+        end
+    end
+end
+function (L::PotentialHessianSymLoss)(q)
+    J = jacobian(L.prob.Vd, q)
+    mapreduce(abs, +, J - J')
+end
+function (L::PotentialHessianSymLoss{P})(q, ps) where {J,M,MD<:Matrix,P<:IDAPBCProblem{J,M,MD}}
+    J = jacobian(L.prob.Vd, q, ps)
+    mapreduce(abs, +, J - J')
+end
+function (L::PotentialHessianSymLoss{P})(q, ps) where {J,M,MD<:Function,P<:IDAPBCProblem{J,M,MD}}
+    _, θVd = unstack(P,ps)
+    J = jacobian(L.prob.Vd, q, θVd)
+    mapreduce(abs, +, J - J')
+end
+
+foo(Vd,q) = begin
+    J = jacobian(Vd, q)
+    mapreduce(abs, +, J - J')
 end
