@@ -61,12 +61,12 @@ end
 
 hasfreevariables(::IDAPBCProblem{J2}) where {J2} = J2===Nothing
 
-function kineticpde(M⁻¹, Md, Md⁻¹, ∇M⁻¹, ∇Md⁻¹, G⊥, J2=0) 
-    return G⊥ * (∇M⁻¹' - Md*M⁻¹*∇Md⁻¹' + J2*Md⁻¹)
+function kineticpde(M⁻¹, Md⁻¹, ∇M⁻¹, ∇Md⁻¹, G⊥, J2=0) 
+    return G⊥ * (∇M⁻¹' - (Md⁻¹\M⁻¹)*∇Md⁻¹' + J2*Md⁻¹)
 end
 
-function potentialpde(M⁻¹, Md, ∇V, ∇Vd, G⊥)
-    return first(G⊥ * (∇V - Md*M⁻¹*∇Vd))
+function potentialpde(M⁻¹, Md⁻¹, ∇V, ∇Vd, G⊥)
+    return first(G⊥ * (∇V - (Md⁻¹\M⁻¹)*∇Vd))
 end
 
 trainable(p::IDAPBCProblem{Nothing,M,MD,V,VD}) where
@@ -204,10 +204,9 @@ function (L::PDELossKinetic{false,false,true,false})(q)
     # M⁻¹::Const, Md⁻¹::Chain, J2::No
     p = L.prob
     Md⁻¹ = p.Md⁻¹(q)
-    Md = inv(Md⁻¹)
     ∇Md⁻¹ = jacobian(p.Md⁻¹,q)
     r = map(∇Md⁻¹) do _1
-        sum(abs, kineticpde(p.M⁻¹, Md, Md⁻¹, 0*p.M⁻¹, _1, p.G⊥))
+        sum(abs, kineticpde(p.M⁻¹, Md⁻¹, 0*p.M⁻¹, _1, p.G⊥))
     end
     sum(r)
 end
@@ -215,10 +214,9 @@ function (L::PDELossKinetic{false,false,true,true})(q)
     # M⁻¹::Const, Md⁻¹::Chain, J2::NTuple{Chain}
     p = L.prob
     Md⁻¹ = p.Md⁻¹(q)
-    Md = inv(Md⁻¹)
     ∇Md⁻¹ = jacobian(p.Md⁻¹,q)
     r = map(∇Md⁻¹, p.J2) do _1,Uk
-        sum(abs, kineticpde(p.M⁻¹, Md, Md⁻¹, 0*p.M⁻¹, _1, p.G⊥, Uk(q)))
+        sum(abs, kineticpde(p.M⁻¹, Md⁻¹, 0*p.M⁻¹, _1, p.G⊥, Uk(q)))
     end
     sum(r)
 end
@@ -227,10 +225,9 @@ function (L::PDELossKinetic{true,false,true,false})(q,ps)
     p = L.prob
     θMd⁻¹ = first(unstack(p,ps))
     Md⁻¹ = p.Md⁻¹(q,θMd⁻¹)
-    Md = inv(Md⁻¹)
     ∇Md⁻¹ = jacobian(p.Md⁻¹,q,θMd⁻¹)
     r = map(∇Md⁻¹) do _1
-        sum(abs, kineticpde(p.M⁻¹, Md, Md⁻¹, 0*p.M⁻¹, _1, p.G⊥))
+        sum(abs, kineticpde(p.M⁻¹, Md⁻¹, 0*p.M⁻¹, _1, p.G⊥))
     end
     sum(r)
 end
@@ -240,10 +237,9 @@ function (L::PDELossKinetic{true,false,true,true})(q,ps)
     θ = unstack(p,ps)
     θMd⁻¹ = first(θ)
     Md⁻¹ = p.Md⁻¹(q,θMd⁻¹)
-    Md = inv(Md⁻¹)
     ∇Md⁻¹ = jacobian(p.Md⁻¹,q,θMd⁻¹)
     r = map(∇Md⁻¹, p.J2, tail(θ[2:end])) do _1,Uk,Ukps
-        sum(abs, kineticpde(p.M⁻¹, Md, Md⁻¹, 0*p.M⁻¹, _1, p.G⊥, Uk(q,Ukps)))
+        sum(abs, kineticpde(p.M⁻¹, Md⁻¹, 0*p.M⁻¹, _1, p.G⊥, Uk(q,Ukps)))
     end
     sum(r)
 end
@@ -253,10 +249,9 @@ function (L::PDELossKinetic{false,true,true,false})(q)
     M⁻¹ = p.M⁻¹(q)
     ∇M⁻¹ = jacobian(p.M⁻¹, q)
     Md⁻¹ = p.Md⁻¹(q)
-    Md = inv(Md⁻¹)
     ∇Md⁻¹ = jacobian(p.Md⁻¹,q)
     r = map(∇M⁻¹, ∇Md⁻¹) do _1, _2
-        sum(abs, kineticpde(M⁻¹, Md, Md⁻¹, _1, _2, p.G⊥))
+        sum(abs, kineticpde(M⁻¹, Md⁻¹, _1, _2, p.G⊥))
     end
     sum(r)
 end
@@ -266,10 +261,9 @@ function (L::PDELossKinetic{false,true,true,true})(q)
     M⁻¹ = p.M⁻¹(q)
     ∇M⁻¹ = jacobian(p.M⁻¹, q)
     Md⁻¹ = p.Md⁻¹(q)
-    Md = inv(Md⁻¹)
     ∇Md⁻¹ = jacobian(p.Md⁻¹,q)
     r = map(∇M⁻¹, ∇Md⁻¹, p.J2) do _1, _2, Uk
-        sum(abs, kineticpde(M⁻¹, Md, Md⁻¹, _1, _2, p.G⊥, Uk(q)))
+        sum(abs, kineticpde(M⁻¹, Md⁻¹, _1, _2, p.G⊥, Uk(q)))
     end
     sum(r)
 end
@@ -280,10 +274,9 @@ function (L::PDELossKinetic{true,true,true,false})(q,ps)
     ∇M⁻¹ = jacobian(p.M⁻¹, q)
     θMd⁻¹ = first(unstack(p,ps))
     Md⁻¹ = p.Md⁻¹(q,θMd⁻¹)
-    Md = inv(Md⁻¹)
     ∇Md⁻¹ = jacobian(p.Md⁻¹,q,θMd⁻¹)
     r = map(∇M⁻¹, ∇Md⁻¹) do _1, _2
-        sum(abs, kineticpde(M⁻¹, Md, Md⁻¹, _1, _2, p.G⊥))
+        sum(abs, kineticpde(M⁻¹, Md⁻¹, _1, _2, p.G⊥))
     end
     sum(r)
 end
@@ -295,10 +288,9 @@ function (L::PDELossKinetic{true,true,true,true})(q,ps)
     θ = unstack(p,ps)
     θMd⁻¹ = first(θ)
     Md⁻¹ = p.Md⁻¹(q,θMd⁻¹)
-    Md = inv(Md⁻¹)
     ∇Md⁻¹ = jacobian(p.Md⁻¹,q,θMd⁻¹)
     r = map(∇M⁻¹, ∇Md⁻¹, p.J2, tail(θ[2:end])) do _1, _2, Uk, Ukps
-        sum(abs, kineticpde(M⁻¹, Md, Md⁻¹, _1, _2, p.G⊥, Uk(q,Ukps)))
+        sum(abs, kineticpde(M⁻¹, Md⁻¹, _1, _2, p.G⊥, Uk(q,Ukps)))
     end
     sum(r)
 end
@@ -317,21 +309,20 @@ function (L::PDELossPotential{false,false,false})(q)
     p = L.prob
     ∇V = jacobian(p.V, q)[:]
     ∇Vd = jacobian(p.Vd, q)[:]
-    potentialpde(p.M⁻¹, inv(p.Md⁻¹), ∇V, ∇Vd, p.G⊥)
+    potentialpde(p.M⁻¹, p.Md⁻¹, ∇V, ∇Vd, p.G⊥)
 end
 function (L::PDELossPotential{true,false,false})(q,ps)
     p = L.prob
     ∇V = jacobian(p.V, q)[:]
     ∇Vd = jacobian(p.Vd, q, ps)[:]
-    potentialpde(p.M⁻¹, inv(p.Md⁻¹), ∇V, ∇Vd, p.G⊥)
+    potentialpde(p.M⁻¹, p.Md⁻¹, ∇V, ∇Vd, p.G⊥)
 end
 function (L::PDELossPotential{false,false,true})(q)
     p = L.prob
     ∇V = jacobian(p.V, q)[:]
     ∇Vd = jacobian(p.Vd, q)[:]
     Md⁻¹ = p.Md⁻¹(q)
-    Md = inv(Md⁻¹)
-    potentialpde(p.M⁻¹, Md, ∇V, ∇Vd, p.G⊥)
+    potentialpde(p.M⁻¹, Md⁻¹, ∇V, ∇Vd, p.G⊥)
 end
 function (L::PDELossPotential{true,false,true})(q,ps)
     p = L.prob
@@ -339,8 +330,7 @@ function (L::PDELossPotential{true,false,true})(q,ps)
     ∇V = jacobian(p.V, q)[:]
     ∇Vd = jacobian(p.Vd, q, θVd)[:]
     Md⁻¹ = p.Md⁻¹(q,θMd⁻¹)
-    Md = inv(Md⁻¹)
-    potentialpde(p.M⁻¹, Md, ∇V, ∇Vd, p.G⊥)
+    potentialpde(p.M⁻¹, Md⁻¹, ∇V, ∇Vd, p.G⊥)
 end
 function (L::PDELossPotential{false,true,true})(q) 
     p = L.prob
@@ -348,8 +338,7 @@ function (L::PDELossPotential{false,true,true})(q)
     ∇Vd = jacobian(p.Vd, q)[:]
     M⁻¹ = p.M⁻¹(q)
     Md⁻¹ = p.Md⁻¹(q)
-    Md = inv(Md⁻¹)
-    potentialpde(M⁻¹, Md, ∇V, ∇Vd, p.G⊥)
+    potentialpde(M⁻¹, Md⁻¹, ∇V, ∇Vd, p.G⊥)
 end
 function (L::PDELossPotential{true,true,true})(q,ps)
     p = L.prob
@@ -358,6 +347,5 @@ function (L::PDELossPotential{true,true,true})(q,ps)
     ∇Vd = jacobian(p.Vd, q, θVd)[:]
     M⁻¹ = p.M⁻¹(q)
     Md⁻¹ = p.Md⁻¹(q,θMd⁻¹)
-    Md = inv(Md⁻¹)
-    potentialpde(M⁻¹, Md, ∇V, ∇Vd, p.G⊥)
+    potentialpde(M⁻¹, Md⁻¹, ∇V, ∇Vd, p.G⊥)
 end

@@ -24,6 +24,16 @@ function MLBasedESC.jacobian(::typeof(inmap), q,::Any=nothing)
     ]
 end
 
+function runalltests()
+    test1_chain()
+    test1_fastchain()
+    # test2_chain()
+    # test2_fastchain()
+    test3_chain()
+    test3_fastchain()
+    test4_chain()
+    test4_fastchain()
+end
 
 #==============================================================================
 Test 1 ===> constant M; constant Md; neural-net Vd; no input mapping; no J2
@@ -62,7 +72,7 @@ function test1_fastchain()
     L1(q,θ)
     L2(q,θ)
     dL1(q,ps) = ReverseDiff.gradient(_2->L1(q,_2), ps)
-    dL2(q,ps) = Flux.gradient(_2->L2(q,_2), ps)[1]
+    dL2(q,ps) = ReverseDiff.gradient(_2->L2(q,_2), ps)
     unstack(P, dL1(q,θ))
     unstack(P, dL2(q,θ))
 end
@@ -115,8 +125,8 @@ function test2_fastchain()
     θ = paramstack(P)
     L1(q,θ)
     L2(q,θ)
-    dL1(q,ps) = Flux.gradient(_2->L1(q,_2), ps)[1]
-    dL2(q,ps) = Flux.gradient(_2->L2(q,_2), ps)[1]
+    dL1(q,ps) = ReverseDiff.gradient(_2->L1(q,_2), ps)
+    dL2(q,ps) = ReverseDiff.gradient(_2->L2(q,_2), ps)
     unstack(P, dL1(q,θ))
     unstack(P, dL2(q,θ))
 end
@@ -165,8 +175,8 @@ function test3_fastchain()
     θ = paramstack(P)
     L1(q,θ)
     L2(q,θ)
-    dL1(q,ps) = Flux.gradient(_2->L1(q,_2), ps)[1]
-    dL2(q,ps) = Flux.gradient(_2->L2(q,_2), ps)[1]
+    dL1(q,ps) = ReverseDiff.gradient(_2->L1(q,_2), ps)
+    dL2(q,ps) = ReverseDiff.gradient(_2->L2(q,_2), ps)
     unstack(P, dL1(q,θ))
     unstack(P, dL2(q,θ))
 end
@@ -227,8 +237,8 @@ function test4_fastchain()
     θ = paramstack(P)
     L1(q,θ)
     L2(q,θ)
-    dL1(q,ps) = Flux.gradient(_2->L1(q,_2), ps)[1]
-    dL2(q,ps) = Flux.gradient(_2->L2(q,_2), ps)[1]
+    dL1(q,ps) = ReverseDiff.gradient(_2->L1(q,_2), ps)
+    dL2(q,ps) = ReverseDiff.gradient(_2->L2(q,_2), ps)
     unstack(P, dL1(q,θ))
     unstack(P, dL2(q,θ))
 end
