@@ -84,6 +84,36 @@ unstack(p::IDAPBCProblem, ps) = unstack(trainable(p), ps)
 unstack(p::IDAPBCProblem, ::Nothing) = nothing
 paramstack(p::IDAPBCProblem) = vcat(DiffEqFlux.initial_params.(trainable(p))...)
 
+function ∇H(P::IDAPBCProblem{J2,M}, x) where {J2,M<:Matrix}
+    q = x[1:P.N]
+    jacobian(p.V, q)[:]
+end
+function ∇H(P::IDAPBCProblem{J2,M}, x) where {J2,M<:Function}
+    N = P.N
+    q, p = x[1:N], x[N+1:2N]
+    JM⁻¹ = jacobian(P.M⁻¹, q)
+    (sum(JM⁻¹.*p)'*p)/2 + jacobian(p.V, q)[:]
+end
+
+function ∇Hd(P::IDAPBCProblem{J2,M,MD,V,VD}, x) where {J2,M,MD<:Matrix,VD<:Chain}
+    q = x[1:P.N]
+    jacobian(p.Vd, q)[:]
+end
+function ∇Hd(P::IDAPBCProblem{J2,M,MD,V,VD}, x) where {J2,M,MD<:Chain,VD<:Chain}
+    N = P.N
+    q, p = x[1:N], x[N+1:2N]
+    Md⁻¹ = P.Md⁻¹(q)
+    JMd⁻¹ = jacobian(P.Md⁻¹, q)
+    (sum(JMd⁻¹.*p)'*p)/2 + jacobian(p.Vd, q)[:]
+end
+
+function controller(P::IDAPBCProblem{Nothing}, x; kv=1) 
+    N = P.N
+    G⁻¹ = (P.G'*P.G)\(P.G')
+    u_es = G⁻¹ * ( ∇H(P,x) - MdM⁻¹*∇Hd(P,x) )
+    u_di = -kv * dot(G, Md⁻¹*x[N+1:2N])
+    return u_es + u_di
+end
 
 abstract type IDAPBCLoss end
 
