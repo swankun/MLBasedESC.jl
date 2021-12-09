@@ -3,6 +3,7 @@ using Flux
 using LinearAlgebra
 import DiffEqFlux
 using DiffEqFlux: FastChain, FastDense
+using ReverseDiff
 
 const N = 2
 const M⁻¹ = inv(diagm([0.1, 0.2]))
