@@ -78,7 +78,7 @@ trainable(p::IDAPBCProblem{Nothing,M,MD,V,VD}) where
     {M,V,MD<:Matrix,VD<:UFA} = (p.Vd,)
 trainable(p::IDAPBCProblem{J,M,MD,V,VD}) where
     {M,V,MD<:UFA,VD<:UFA,N,J<:NTuple{N,<:UFA}} = (p.Md⁻¹, p.Vd, p.J2...)
-function unstack(ts::NTuple{N,FastChain}, ps) where N
+function unstack(ts::NTuple{N,Function}, ps) where N
     n = DiffEqFlux.paramlength(first(ts))
     res = ps[1:n]
     return (res, unstack(tail(ts), ps[n+1:end])...)
@@ -123,7 +123,7 @@ function _∇Vd(P::IDAPBCProblem{J2,M,MD,V,VD}, q, ps) where {J2,M,V,MD<:Functio
     if VD<:FastChain && !isone(last(P.Vd.layers).out)
         return P.Vd(q, ps)
     else
-        return jacobian(P.Vd, q, ps)[:]
+        return jacobian(P.Vd, q, θVd)[:]
     end
 end
 
