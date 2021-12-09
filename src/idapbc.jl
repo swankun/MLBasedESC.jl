@@ -20,6 +20,9 @@ struct IDAPBCProblem{TJ2,M,MD,V,VD,GT,GP}
         if isa(M⁻¹,Matrix) && isa(Md⁻¹,Matrix) && !isnothing(J2)
             error("Constant M and Md requires J2=nothing.")
         end
+        if isa(M⁻¹,Function) && isa(Md⁻¹,Matrix) 
+            error("M is a function, so Md cannot be constant.")
+        end
         for f in (isnothing(J2) ? (Md⁻¹, Vd) : (Md⁻¹, Vd, J2...))
             if isa(f, Chain)
                 valid = (
@@ -85,6 +88,45 @@ unstack(p::IDAPBCProblem, ps) = unstack(trainable(p), ps)
 unstack(::IDAPBCProblem, ::Nothing) = nothing
 paramstack(p::IDAPBCProblem) = vcat(DiffEqFlux.initial_params.(trainable(p))...)
 
+_M⁻¹(P::IDAPBCProblem{J2,M}, ::Any) where {J2,M<:Matrix} = P.M⁻¹
+_M⁻¹(P::IDAPBCProblem{J2,M}, q) where {J2,M<:Function} = P.M⁻¹(q)
+_Md⁻¹(P::IDAPBCProblem{J2,M,MD}, q, ::Any=nothing) where {J2,M,MD<:Matrix} = P.Md⁻¹
+_Md⁻¹(P::IDAPBCProblem{J2,M,MD}, q) where {J2,M,MD<:Chain} = P.Md⁻¹(q)
+function _Md⁻¹(P::IDAPBCProblem{J2,M,MD}, q, ps) where {J2,M,MD<:Function} 
+    θMd = first(unstack(P, ps))
+    P.Md⁻¹(q, θMd)
+end
+_∇M⁻¹(P::IDAPBCProblem{J2,M}, q) where {J2,M<:Matrix} = collect(0P.M⁻¹ for _=1:P.N)
+_∇M⁻¹(P::IDAPBCProblem{J2,M}, q) where {J2,M<:Function} = jacobian(P.M⁻¹,q)
+_∇Md⁻¹(P::IDAPBCProblem{J2,M,MD}, q, ::Any=nothing) where {J2,M,MD<:Matrix} = collect(0P.M⁻¹ for _=1:P.N)
+_∇Md⁻¹(P::IDAPBCProblem{J2,M,MD}, q) where {J2,M,MD<:Chain} = jacobian(P.Md⁻¹,q)
+function _∇Md⁻¹(P::IDAPBCProblem{J2,M,MD}, q, ps) where {J2,M,MD<:Function} 
+    θMd = first(unstack(P, ps))
+    jacobian(P.Md⁻¹, q, θMd)
+end
+function _∇Vd(P::IDAPBCProblem{J2,M,MD,V,VD}, q) where {J2,M,MD,V,VD<:Chain}
+    if isone(length(last(P.Vd.layers).bias))
+        return jacobian(P.Vd, q)[:]
+    else
+        return P.Vd(q)
+    end
+end
+function _∇Vd(P::IDAPBCProblem{J2,M,MD,V,VD}, q, ps) where {J2,M,V,MD<:Matrix,VD<:Function}
+    if VD<:FastChain && !isone(last(P.Vd.layers).out)
+        return P.Vd(q, ps)
+    else
+        return jacobian(P.Vd, q, ps)[:]
+    end
+end
+function _∇Vd(P::IDAPBCProblem{J2,M,MD,V,VD}, q, ps) where {J2,M,V,MD<:Function,VD<:Function}
+    _, θVd = unstack(P,ps)
+    if VD<:FastChain && !isone(last(P.Vd.layers).out)
+        return P.Vd(q, ps)
+    else
+        return jacobian(P.Vd, q, ps)[:]
+    end
+end
+
 interconnection(P::IDAPBCProblem{Nothing}, x, ::Any=nothing) = 0
 function interconnection(P::IDAPBCProblem{<:J2Chain}, x)
     N = P.N
@@ -102,82 +144,43 @@ function interconnection(P::IDAPBCProblem{<:J2FChain}, x, ps)
     end
 end
 
-function ∇H(P::IDAPBCProblem{J2,M}, x) where {J2,M<:Matrix}
-    q = x[1:P.N]
-    jacobian(P.V, q)[:]
-end
-function ∇H(P::IDAPBCProblem{J2,M}, x) where {J2,M<:Function}
+function ∇H(P::IDAPBCProblem, x)
     N = P.N
     q, p = x[1:N], x[N+1:2N]
-    JM⁻¹ = jacobian(P.M⁻¹, q)
-    (sum(JM⁻¹.*p)'*p)/2 + jacobian(P.V, q)[:]
+    ∇M⁻¹ = _∇M⁻¹(P, q)
+    (sum(∇M⁻¹.*p)'*p)/2 + jacobian(P.V, q)[:]
 end
 
-function ∇Hd(P::IDAPBCProblem{J2,M,MD,V,VD}, x) where {J2,M,V,MD<:Matrix,VD<:Chain}
-    q = x[1:P.N]
-    jacobian(P.Vd, q)[:]
-end
-function ∇Hd(P::IDAPBCProblem{J2,M,MD,V,VD}, x) where {J2,M,V,MD<:Chain,VD<:Chain}
+function ∇Hd(P::IDAPBCProblem, x)
     N = P.N
     q, p = x[1:N], x[N+1:2N]
-    JMd⁻¹ = jacobian(P.Md⁻¹, q)
-    (sum(JMd⁻¹.*p)'*p)/2 + jacobian(P.Vd, q)[:]
+    ∇Md⁻¹ = _∇Md⁻¹(P, q)
+    (sum(∇Md⁻¹.*p)'*p)/2 + _∇Vd(P, q)
 end
-function ∇Hd(P::IDAPBCProblem{J2,M,MD,V,VD}, x, ps) where {J2,M,V,MD<:Function,VD<:Function}
+function ∇Hd(P::IDAPBCProblem, x, ps)
     N = P.N
     q, p = x[1:N], x[N+1:2N]
-    θMd, θVd = first(unstack(P,ps), 2)
-    JMd⁻¹ = jacobian(P.Md⁻¹, q, θMd)
-    (sum(JMd⁻¹.*p)'*p)/2 + jacobian(P.Vd, q, θVd)[:]
+    ∇Md⁻¹ = _∇Md⁻¹(P, q, ps)
+    (sum(∇Md⁻¹.*p)'*p)/2 + _∇Vd(P, q, ps)
 end
 
-function controller(P::IDAPBCProblem{J2,M,MD}, x; kv=1) where {J2,M<:Matrix,MD<:Matrix}
+function controller(P::IDAPBCProblem, x; kv=1)
     N = P.N
-    _, p = x[1:N], x[N+1:2N]
+    q, p = x[1:N], x[N+1:2N]
     G⁻¹ = (P.G'*P.G)\(P.G')
-    Md⁻¹, M⁻¹ = P.Md⁻¹, P.M⁻¹
+    M⁻¹ = _M⁻¹(P,q)
+    Md⁻¹ = _Md⁻¹(P,q)
     MdM⁻¹ = Md⁻¹ \ M⁻¹
     u_es = G⁻¹ * ( ∇H(P,x) - MdM⁻¹*∇Hd(P,x) + interconnection(P,x)*Md⁻¹*p )
     u_di = -kv * dot(P.G, Md⁻¹*p)
     return u_es + u_di
 end
-function controller(P::IDAPBCProblem{J2,M,MD}, x; kv=1) where {J2,M<:Matrix,MD<:Chain}
+function controller(P::IDAPBCProblem, x, ps; kv=1)
     N = P.N
     q, p = x[1:N], x[N+1:2N]
     G⁻¹ = (P.G'*P.G)\(P.G')
-    Md⁻¹, M⁻¹ = P.Md⁻¹(q), P.M⁻¹
-    MdM⁻¹ = Md⁻¹ \ M⁻¹
-    u_es = G⁻¹ * ( ∇H(P,x) - MdM⁻¹*∇Hd(P,x) + interconnection(P,x)*Md⁻¹*p )
-    u_di = -kv * dot(P.G, Md⁻¹*p)
-    return u_es + u_di
-end
-function controller(P::IDAPBCProblem{J2,M,MD}, x; kv=1) where {J2,M<:Function,MD<:Chain}
-    N = P.N
-    q, p = x[1:N], x[N+1:2N]
-    G⁻¹ = (P.G'*P.G)\(P.G')
-    Md⁻¹, M⁻¹ = P.Md⁻¹(q), P.M⁻¹(q)
-    MdM⁻¹ = Md⁻¹ \ M⁻¹
-    u_es = G⁻¹ * ( ∇H(P,x) - MdM⁻¹*∇Hd(P,x) + interconnection(P,x)*Md⁻¹*p )
-    u_di = -kv * dot(P.G, Md⁻¹*p)
-    return u_es + u_di
-end
-function controller(P::IDAPBCProblem{J2,M,MD}, x, ps; kv=1) where {J2,M<:Matrix,MD<:Function}
-    N = P.N
-    q, p = x[1:N], x[N+1:2N]
-    G⁻¹ = (P.G'*P.G)\(P.G')
-    θMd = first(unstack(P,ps))
-    Md⁻¹, M⁻¹ = P.Md⁻¹(q,θMd), P.M⁻¹
-    MdM⁻¹ = Md⁻¹ \ M⁻¹
-    u_es = G⁻¹ * ( ∇H(P,x) - MdM⁻¹*∇Hd(P,x,ps) + interconnection(P,x,ps)*Md⁻¹*p )
-    u_di = -kv * dot(P.G, Md⁻¹*p)
-    return u_es + u_di
-end
-function controller(P::IDAPBCProblem{J2,M,MD}, x, ps; kv=1) where {J2,M<:Function,MD<:Function}
-    N = P.N
-    q, p = x[1:N], x[N+1:2N]
-    G⁻¹ = (P.G'*P.G)\(P.G')
-    θMd = first(unstack(P,ps))
-    Md⁻¹, M⁻¹ = P.Md⁻¹(q,θMd), P.M⁻¹(q)
+    M⁻¹ = _M⁻¹(P,q)
+    Md⁻¹ = _Md⁻¹(P,q,ps)
     MdM⁻¹ = Md⁻¹ \ M⁻¹
     u_es = G⁻¹ * ( ∇H(P,x) - MdM⁻¹*∇Hd(P,x,ps) + interconnection(P,x,ps)*Md⁻¹*p )
     u_di = -kv * dot(P.G, Md⁻¹*p)
@@ -186,166 +189,75 @@ end
 
 abstract type IDAPBCLoss end
 
-struct PDELossKinetic{isexplicit,callM,callMD,callJ2,P} <: IDAPBCLoss
+struct PDELossKinetic{hasJ2,P} <: IDAPBCLoss
     prob::P
-    function PDELossKinetic(prob::P) where {J2,M,MD,P<:IDAPBCProblem{J2,M,MD}}
-        callJ2 = J2!==Nothing
-        callM = !(M<:Matrix)
-        callMD = !(MD<:Matrix)
-        isexplicit = (MD<:Function)
-        new{isexplicit,callM,callMD,callJ2,P}(prob)
+    function PDELossKinetic(prob::P) where {J2,P<:IDAPBCProblem{J2}}
+        new{J2!==Nothing,P}(prob)
     end
 end
-function (L::PDELossKinetic{E,false,false,false})(q,::Any=nothing) where {E}
-    # M⁻¹::Const, Md⁻¹::Const, J2::No
-    return 0.0
-end
-function (L::PDELossKinetic{false,false,true,false})(q)  
-    # M⁻¹::Const, Md⁻¹::Chain, J2::No
+function (L::PDELossKinetic{false})(q)
     p = L.prob
-    Md⁻¹ = p.Md⁻¹(q)
-    ∇Md⁻¹ = jacobian(p.Md⁻¹,q)
-    r = map(∇Md⁻¹) do _1
-        sum(abs, kineticpde(p.M⁻¹, Md⁻¹, 0*p.M⁻¹, _1, p.G⊥))
-    end
-    sum(r)
-end
-function (L::PDELossKinetic{false,false,true,true})(q)  
-    # M⁻¹::Const, Md⁻¹::Chain, J2::NTuple{Chain}
-    p = L.prob
-    Md⁻¹ = p.Md⁻¹(q)
-    ∇Md⁻¹ = jacobian(p.Md⁻¹,q)
-    r = map(∇Md⁻¹, p.J2) do _1,Uk
-        sum(abs, kineticpde(p.M⁻¹, Md⁻¹, 0*p.M⁻¹, _1, p.G⊥, Uk(q)))
-    end
-    sum(r)
-end
-function (L::PDELossKinetic{true,false,true,false})(q,ps)
-    # M⁻¹::Const, Md⁻¹::Function, J2::No
-    p = L.prob
-    θMd⁻¹ = first(unstack(p,ps))
-    Md⁻¹ = p.Md⁻¹(q,θMd⁻¹)
-    ∇Md⁻¹ = jacobian(p.Md⁻¹,q,θMd⁻¹)
-    r = map(∇Md⁻¹) do _1
-        sum(abs, kineticpde(p.M⁻¹, Md⁻¹, 0*p.M⁻¹, _1, p.G⊥))
-    end
-    sum(r)
-end
-function (L::PDELossKinetic{true,false,true,true})(q,ps)
-    # M⁻¹::Const, Md⁻¹::Function, J2::NTuple{Function}
-    p = L.prob
-    θ = unstack(p,ps)
-    θMd⁻¹ = first(θ)
-    Md⁻¹ = p.Md⁻¹(q,θMd⁻¹)
-    ∇Md⁻¹ = jacobian(p.Md⁻¹,q,θMd⁻¹)
-    r = map(∇Md⁻¹, p.J2, tail(θ[2:end])) do _1,Uk,Ukps
-        sum(abs, kineticpde(p.M⁻¹, Md⁻¹, 0*p.M⁻¹, _1, p.G⊥, Uk(q,Ukps)))
-    end
-    sum(r)
-end
-function (L::PDELossKinetic{false,true,true,false})(q)
-    # M⁻¹::Function, Md⁻¹::Chain, J2::No
-    p = L.prob
-    M⁻¹ = p.M⁻¹(q)
-    ∇M⁻¹ = jacobian(p.M⁻¹, q)
-    Md⁻¹ = p.Md⁻¹(q)
-    ∇Md⁻¹ = jacobian(p.Md⁻¹,q)
+    M⁻¹ = _M⁻¹(p, q)
+    ∇M⁻¹ = _∇M⁻¹(p, q)
+    Md⁻¹ = _Md⁻¹(p, q)
+    ∇Md⁻¹ = _∇Md⁻¹(p, q)
     r = map(∇M⁻¹, ∇Md⁻¹) do _1, _2
         sum(abs, kineticpde(M⁻¹, Md⁻¹, _1, _2, p.G⊥))
     end
     sum(r)
 end
-function (L::PDELossKinetic{false,true,true,true})(q)
-    # M⁻¹::Function, Md⁻¹::Chain, J2::NTuple{Chain}
+function (L::PDELossKinetic{true})(q)
     p = L.prob
-    M⁻¹ = p.M⁻¹(q)
-    ∇M⁻¹ = jacobian(p.M⁻¹, q)
-    Md⁻¹ = p.Md⁻¹(q)
-    ∇Md⁻¹ = jacobian(p.Md⁻¹,q)
+    M⁻¹ = _M⁻¹(p, q)
+    ∇M⁻¹ = _∇M⁻¹(p, q)
+    Md⁻¹ = _Md⁻¹(p, q)
+    ∇Md⁻¹ = _∇Md⁻¹(p, q)
     r = map(∇M⁻¹, ∇Md⁻¹, p.J2) do _1, _2, Uk
         sum(abs, kineticpde(M⁻¹, Md⁻¹, _1, _2, p.G⊥, Uk(q)))
     end
     sum(r)
 end
-function (L::PDELossKinetic{true,true,true,false})(q,ps)
-    # M⁻¹::Function, Md⁻¹::Function, J2::No
+function (L::PDELossKinetic{false})(q,ps)
     p = L.prob
-    M⁻¹ = p.M⁻¹(q)
-    ∇M⁻¹ = jacobian(p.M⁻¹, q)
-    θMd⁻¹ = first(unstack(p,ps))
-    Md⁻¹ = p.Md⁻¹(q,θMd⁻¹)
-    ∇Md⁻¹ = jacobian(p.Md⁻¹,q,θMd⁻¹)
+    M⁻¹ = _M⁻¹(p, q)
+    ∇M⁻¹ = _∇M⁻¹(p, q)
+    Md⁻¹ = _Md⁻¹(p, q, ps)
+    ∇Md⁻¹ = _∇Md⁻¹(p, q, ps)
     r = map(∇M⁻¹, ∇Md⁻¹) do _1, _2
         sum(abs, kineticpde(M⁻¹, Md⁻¹, _1, _2, p.G⊥))
     end
     sum(r)
 end
-function (L::PDELossKinetic{true,true,true,true})(q,ps)
-    # M⁻¹::Function, Md⁻¹::Function, J2::NTuple{Function}
+function (L::PDELossKinetic{true})(q,ps)
     p = L.prob
-    M⁻¹ = p.M⁻¹(q)
-    ∇M⁻¹ = jacobian(p.M⁻¹, q)
-    θ = unstack(p,ps)
-    θMd⁻¹ = first(θ)
-    Md⁻¹ = p.Md⁻¹(q,θMd⁻¹)
-    ∇Md⁻¹ = jacobian(p.Md⁻¹,q,θMd⁻¹)
-    r = map(∇M⁻¹, ∇Md⁻¹, p.J2, tail(θ[2:end])) do _1, _2, Uk, Ukps
+    M⁻¹ = _M⁻¹(p, q)
+    ∇M⁻¹ = _∇M⁻¹(p, q)
+    Md⁻¹ = _Md⁻¹(p, q, ps)
+    ∇Md⁻¹ = _∇Md⁻¹(p, q, ps)
+    J2ps = last(unstack(p, ps), 2)
+    r = map(∇M⁻¹, ∇Md⁻¹, p.J2, J2ps) do _1, _2, Uk, Ukps
         sum(abs, kineticpde(M⁻¹, Md⁻¹, _1, _2, p.G⊥, Uk(q,Ukps)))
     end
     sum(r)
 end
 
 
-struct PDELossPotential{isexplicit,callM,callMD,P} <: IDAPBCLoss
+struct PDELossPotential{P} <: IDAPBCLoss
     prob::P
-    function PDELossPotential(prob::P) where {J2,M,MD,V,VD,P<:IDAPBCProblem{J2,M,MD,V,VD}}
-        callM = !(M<:Matrix)
-        callMD = !(MD<:Matrix)
-        isexplicit = (VD<:Function)
-        new{isexplicit,callM,callMD,P}(prob)
-    end
 end
-function (L::PDELossPotential{false,false,false})(q)
+function (L::PDELossPotential)(q) 
     p = L.prob
     ∇V = jacobian(p.V, q)[:]
-    ∇Vd = jacobian(p.Vd, q)[:]
-    potentialpde(p.M⁻¹, p.Md⁻¹, ∇V, ∇Vd, p.G⊥)
-end
-function (L::PDELossPotential{true,false,false})(q,ps)
-    p = L.prob
-    ∇V = jacobian(p.V, q)[:]
-    ∇Vd = jacobian(p.Vd, q, ps)[:]
-    potentialpde(p.M⁻¹, p.Md⁻¹, ∇V, ∇Vd, p.G⊥)
-end
-function (L::PDELossPotential{false,false,true})(q)
-    p = L.prob
-    ∇V = jacobian(p.V, q)[:]
-    ∇Vd = jacobian(p.Vd, q)[:]
-    Md⁻¹ = p.Md⁻¹(q)
-    potentialpde(p.M⁻¹, Md⁻¹, ∇V, ∇Vd, p.G⊥)
-end
-function (L::PDELossPotential{true,false,true})(q,ps)
-    p = L.prob
-    θMd⁻¹, θVd = unstack(p,ps)
-    ∇V = jacobian(p.V, q)[:]
-    ∇Vd = jacobian(p.Vd, q, θVd)[:]
-    Md⁻¹ = p.Md⁻¹(q,θMd⁻¹)
-    potentialpde(p.M⁻¹, Md⁻¹, ∇V, ∇Vd, p.G⊥)
-end
-function (L::PDELossPotential{false,true,true})(q) 
-    p = L.prob
-    ∇V = jacobian(p.V, q)[:]
-    ∇Vd = jacobian(p.Vd, q)[:]
-    M⁻¹ = p.M⁻¹(q)
-    Md⁻¹ = p.Md⁻¹(q)
+    ∇Vd = _∇Vd(p, q)
+    M⁻¹ = _M⁻¹(p, q)
+    Md⁻¹ = _Md⁻¹(p, q)
     potentialpde(M⁻¹, Md⁻¹, ∇V, ∇Vd, p.G⊥)
 end
-function (L::PDELossPotential{true,true,true})(q,ps)
+function (L::PDELossPotential)(q,ps)
     p = L.prob
-    θMd⁻¹, θVd = unstack(p,ps)
     ∇V = jacobian(p.V, q)[:]
-    ∇Vd = jacobian(p.Vd, q, θVd)[:]
-    M⁻¹ = p.M⁻¹(q)
-    Md⁻¹ = p.Md⁻¹(q,θMd⁻¹)
+    ∇Vd = _∇Vd(p, q, ps)
+    M⁻¹ = _M⁻¹(p, q)
+    Md⁻¹ = _Md⁻¹(p, q, ps)
     potentialpde(M⁻¹, Md⁻¹, ∇V, ∇Vd, p.G⊥)
 end
