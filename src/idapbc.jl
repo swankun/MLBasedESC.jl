@@ -1,6 +1,7 @@
 export IDAPBCProblem, PDELossKinetic, PDELossPotential
 export kineticpde, potentialpde
 export trainable, unstack, paramstack
+export interconnection, controller
 
 const UFA = Union{T,C} where {T<:Function, C<:Chain}
 const J2Chain = NTuple{N,<:Chain} where {N}
@@ -84,34 +85,102 @@ unstack(p::IDAPBCProblem, ps) = unstack(trainable(p), ps)
 unstack(p::IDAPBCProblem, ::Nothing) = nothing
 paramstack(p::IDAPBCProblem) = vcat(DiffEqFlux.initial_params.(trainable(p))...)
 
+interconnection(P::IDAPBCProblem{Nothing}, x, ::Any=nothing) = 0
+function interconnection(P::IDAPBCProblem{<:J2Chain}, x)
+    N = P.N
+    q, p = x[1:N], x[N+1:2N]
+    mapreduce(+, P.J2, p) do Uk, pk
+        Uk(q)*pk/2
+    end
+end
+function interconnection(P::IDAPBCProblem{<:J2FChain}, x, ps)
+    N = P.N
+    q, p = x[1:N], x[N+1:2N]
+    θ = last(unstack(P, ps), 2)
+    mapreduce(+, P.J2, p, θ) do Uk, pk, θk
+        Uk(q,θk)*pk/2
+    end
+end
+
 function ∇H(P::IDAPBCProblem{J2,M}, x) where {J2,M<:Matrix}
     q = x[1:P.N]
-    jacobian(p.V, q)[:]
+    jacobian(P.V, q)[:]
 end
 function ∇H(P::IDAPBCProblem{J2,M}, x) where {J2,M<:Function}
     N = P.N
     q, p = x[1:N], x[N+1:2N]
     JM⁻¹ = jacobian(P.M⁻¹, q)
-    (sum(JM⁻¹.*p)'*p)/2 + jacobian(p.V, q)[:]
+    (sum(JM⁻¹.*p)'*p)/2 + jacobian(P.V, q)[:]
 end
 
-function ∇Hd(P::IDAPBCProblem{J2,M,MD,V,VD}, x) where {J2,M,MD<:Matrix,VD<:Chain}
+function ∇Hd(P::IDAPBCProblem{J2,M,MD,V,VD}, x) where {J2,M,V,MD<:Matrix,VD<:Chain}
     q = x[1:P.N]
-    jacobian(p.Vd, q)[:]
+    jacobian(P.Vd, q)[:]
 end
-function ∇Hd(P::IDAPBCProblem{J2,M,MD,V,VD}, x) where {J2,M,MD<:Chain,VD<:Chain}
+function ∇Hd(P::IDAPBCProblem{J2,M,MD,V,VD}, x) where {J2,M,V,MD<:Chain,VD<:Chain}
     N = P.N
     q, p = x[1:N], x[N+1:2N]
-    Md⁻¹ = P.Md⁻¹(q)
     JMd⁻¹ = jacobian(P.Md⁻¹, q)
-    (sum(JMd⁻¹.*p)'*p)/2 + jacobian(p.Vd, q)[:]
+    (sum(JMd⁻¹.*p)'*p)/2 + jacobian(P.Vd, q)[:]
+end
+function ∇Hd(P::IDAPBCProblem{J2,M,MD,V,VD}, x, ps) where {J2,M,V,MD<:Function,VD<:Function}
+    N = P.N
+    q, p = x[1:N], x[N+1:2N]
+    θMd, θVd = first(unstack(P,ps), 2)
+    JMd⁻¹ = jacobian(P.Md⁻¹, q, θMd)
+    (sum(JMd⁻¹.*p)'*p)/2 + jacobian(P.Vd, q, θVd)[:]
 end
 
-function controller(P::IDAPBCProblem{Nothing}, x; kv=1) 
+function controller(P::IDAPBCProblem{J2,M,MD}, x; kv=1) where {J2,M<:Matrix,MD<:Matrix}
     N = P.N
+    _, p = x[1:N], x[N+1:2N]
     G⁻¹ = (P.G'*P.G)\(P.G')
-    u_es = G⁻¹ * ( ∇H(P,x) - MdM⁻¹*∇Hd(P,x) )
-    u_di = -kv * dot(G, Md⁻¹*x[N+1:2N])
+    Md⁻¹, M⁻¹ = P.Md⁻¹, P.M⁻¹
+    MdM⁻¹ = Md⁻¹ \ M⁻¹
+    u_es = G⁻¹ * ( ∇H(P,x) - MdM⁻¹*∇Hd(P,x) + interconnection(P,x)*Md⁻¹*p )
+    u_di = -kv * dot(P.G, Md⁻¹*p)
+    return u_es + u_di
+end
+function controller(P::IDAPBCProblem{J2,M,MD}, x; kv=1) where {J2,M<:Matrix,MD<:Chain}
+    N = P.N
+    q, p = x[1:N], x[N+1:2N]
+    G⁻¹ = (P.G'*P.G)\(P.G')
+    Md⁻¹, M⁻¹ = P.Md⁻¹(q), P.M⁻¹
+    MdM⁻¹ = Md⁻¹ \ M⁻¹
+    u_es = G⁻¹ * ( ∇H(P,x) - MdM⁻¹*∇Hd(P,x) + interconnection(P,x)*Md⁻¹*p )
+    u_di = -kv * dot(P.G, Md⁻¹*p)
+    return u_es + u_di
+end
+function controller(P::IDAPBCProblem{J2,M,MD}, x; kv=1) where {J2,M<:Function,MD<:Chain}
+    N = P.N
+    q, p = x[1:N], x[N+1:2N]
+    G⁻¹ = (P.G'*P.G)\(P.G')
+    Md⁻¹, M⁻¹ = P.Md⁻¹(q), P.M⁻¹(q)
+    MdM⁻¹ = Md⁻¹ \ M⁻¹
+    u_es = G⁻¹ * ( ∇H(P,x) - MdM⁻¹*∇Hd(P,x) + interconnection(P,x)*Md⁻¹*p )
+    u_di = -kv * dot(P.G, Md⁻¹*p)
+    return u_es + u_di
+end
+function controller(P::IDAPBCProblem{J2,M,MD}, x, ps; kv=1) where {J2,M<:Matrix,MD<:Function}
+    N = P.N
+    q, p = x[1:N], x[N+1:2N]
+    G⁻¹ = (P.G'*P.G)\(P.G')
+    θMd = first(unstack(P,ps))
+    Md⁻¹, M⁻¹ = P.Md⁻¹(q,θMd), P.M⁻¹
+    MdM⁻¹ = Md⁻¹ \ M⁻¹
+    u_es = G⁻¹ * ( ∇H(P,x) - MdM⁻¹*∇Hd(P,x,ps) + interconnection(P,x,ps)*Md⁻¹*p )
+    u_di = -kv * dot(P.G, Md⁻¹*p)
+    return u_es + u_di
+end
+function controller(P::IDAPBCProblem{J2,M,MD}, x, ps; kv=1) where {J2,M<:Function,MD<:Function}
+    N = P.N
+    q, p = x[1:N], x[N+1:2N]
+    G⁻¹ = (P.G'*P.G)\(P.G')
+    θMd = first(unstack(P,ps))
+    Md⁻¹, M⁻¹ = P.Md⁻¹(q,θMd), P.M⁻¹(q)
+    MdM⁻¹ = Md⁻¹ \ M⁻¹
+    u_es = G⁻¹ * ( ∇H(P,x) - MdM⁻¹*∇Hd(P,x,ps) + interconnection(P,x,ps)*Md⁻¹*p )
+    u_di = -kv * dot(P.G, Md⁻¹*p)
     return u_es + u_di
 end
 
