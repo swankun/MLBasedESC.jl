@@ -305,8 +305,3 @@ function (L::PotentialHessianSymLoss{P})(q, ps) where {J,M,MD<:Function,P<:IDAPB
     J = jacobian(L.prob.Vd, q, θVd)
     mapreduce(abs, +, J - J')
 end
-
-foo(Vd,q) = begin
-    J = jacobian(Vd, q)
-    mapreduce(abs, +, J - J')
-end
