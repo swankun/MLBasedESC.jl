@@ -49,9 +49,9 @@ delu(x::Real, α=one(x)) = ifelse(x > 0.0, one(x), α*exp(x) )
 dtanh(x) = one(x) - tanh(x)*tanh(x)
 square(x,::Any=nothing) = x.^2
 
-derivative(f::typeof(elu)) = delu
-derivative(f::typeof(tanh)) = dtanh
-derivative(f::typeof(identity)) = (x)->one(eltype(x))
+derivative(::typeof(elu)) = delu
+derivative(::typeof(tanh)) = dtanh
+derivative(::typeof(identity)) = (x)->one(eltype(x))
 derivative(::typeof(square)) = (x,::Any=nothing)->2x
 
 jacobian(::typeof(square), x::AbstractVector, ::Any=nothing) = diagm(derivative(square)(x))
@@ -85,10 +85,10 @@ function _applychain(fs::DenseLayers, x)
     last(fs)(y, NoActivation)
 end
 _applychain(fs::InputDense, x) = _applychain(tail(fs), first(fs)(x))
-_applychain(fs::Tuple{<:Function}, x) = x
+_applychain(::Tuple{<:Function}, x) = x
 
 
-chainGrad(fs::Tuple{}, x) = LinearAlgebra.I
+chainGrad(::Tuple{}, x) = LinearAlgebra.I
 function chainGrad(fs::T, x)  where {T<:Union{DenseLayers,InputDense}}
     y = _applychain(fs,x) 
     jacobian(last(fs), y) * chainGrad(front(fs), x)
@@ -148,14 +148,14 @@ function _applychain(fs::FastDenseLayers, x, p)
 end
 _applychain(fs::Tuple{FastDense}, x, p) = last(fs)(x, p, NoActivation)
 _applychain(fs::InputFastDense, x, p) = _applychain(tail(fs), first(fs)(x), p)
-_applychain(fs::Tuple{<:Function}, x, p) = x
+_applychain(::Tuple{<:Function}, x, ::Any) = x
 
 function chainGrad(fs::InputFastDense, x, p)
     y = _applychain(fs,x,p)
     ps = last(paramslice(fs,p))
     return jacobian(last(fs), y, ps) * chainGrad(front(fs), x, p[1:end-length(ps)])
 end
-chainGrad(fs::Tuple{}, x, p) = LinearAlgebra.I
+chainGrad(::Tuple{}, ::Any, ::Any) = LinearAlgebra.I
 
 function jacobian(m::FastChain{T}, x, p) where {T<:Union{FastDenseLayers,InputFastDense}}
     chainGrad(m.layers,x,p)
@@ -187,7 +187,7 @@ function paramslice(fs::Tuple, p)   # layers fs must be in increasing order
     res = @view(p[1:N])
     return (res, paramslice(tail(fs), p[N+1:end])...)
 end
-paramslice(l::Tuple{}, p) = ()
+paramslice(::Tuple{}, ::Any) = ()
 
 function param2Wb(f::FastDense, p)
     np = DiffEqFlux.paramlength(f)

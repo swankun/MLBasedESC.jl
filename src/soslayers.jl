@@ -35,7 +35,7 @@ function jacobian(S::SOSPoly{N,M}, x, p) where {N,M}
 end
 
 DiffEqFlux.initial_params(S::SOSPoly) = S.initial_params()
-DiffEqFlux.paramlength(S::SOSPoly{N,M}) where {N,M} = M*M 
+DiffEqFlux.paramlength(::SOSPoly{N,M}) where {N,M} = M*M 
 
 const SOSPolyLayers = Tuple{<:Function,S} where {S<:SOSPoly}
 function jacobian(m::FastChain{T}, x, p) where {T<:SOSPolyLayers}
