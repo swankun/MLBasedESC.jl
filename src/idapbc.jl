@@ -296,11 +296,11 @@ function (L::PotentialHessianSymLoss)(q)
     J = jacobian(L.prob.Vd, q)
     mapreduce(abs, +, J - J')
 end
-function (L::PotentialHessianSymLoss{P})(q, ps) where {J,M,MD<:Matrix,P<:IDAPBCProblem{J,M,MD}}
+function (L::PotentialHessianSymLoss{P})(q, ps) where {J2,M,MD<:Matrix,P<:IDAPBCProblem{J2,M,MD}}
     J = jacobian(L.prob.Vd, q, ps)
     mapreduce(abs, +, J - J')
 end
-function (L::PotentialHessianSymLoss{P})(q, ps) where {J,M,MD<:Function,P<:IDAPBCProblem{J,M,MD}}
+function (L::PotentialHessianSymLoss{P})(q, ps) where {J2,M,MD<:Function,P<:IDAPBCProblem{J2,M,MD}}
     _, θVd = unstack(P,ps)
     J = jacobian(L.prob.Vd, q, θVd)
     mapreduce(abs, +, J - J')
