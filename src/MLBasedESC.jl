@@ -24,12 +24,12 @@ using DynamicPolynomials
 # include("hamiltonian.jl")
 # include("ida_pbc.jl")
 # include("loss.jl")
-# include("constants.jl")
 # include("systems/abstractsys.jl")
 # include("systems/iwp.jl")
 
 include("fluxhelpers/fluxhelpers.jl")
 include("idapbc.jl")
 include("soslayers.jl")
+include("constants.jl")
 
 end

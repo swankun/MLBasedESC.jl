@@ -17,7 +17,7 @@ struct IDAPBCProblem{TJ2,M,MD,V,VD,GT,GP}
     G::GT
     G⊥::GP
     function IDAPBCProblem(N,M⁻¹,Md⁻¹,V,Vd,J2,G,G⊥)
-        if isa(M⁻¹,Matrix) && isa(Md⁻¹,Matrix) && !isnothing(J2)
+        if isa(M⁻¹,Matrix) && (isa(Md⁻¹,Matrix) || isa(Md⁻¹,PSDMatrix)) && !isnothing(J2)
             error("Constant M and Md requires J2=nothing.")
         end
         if isa(M⁻¹,Function) && isa(Md⁻¹,Matrix) 
