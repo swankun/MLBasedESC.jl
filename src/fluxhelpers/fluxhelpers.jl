@@ -34,7 +34,7 @@ end
 
 const SubMatrix = SubArray{T,2} where {T}
 
-function hadamard(A::Matrix,B::M) where {M<:Union{Matrix,SubMatrix}}
+function hadamard(A::AbstractMatrix,B::M) where {M<:Union{AbstractMatrix,SubMatrix}}
     nx = size(A,2)
     m,n = size(B)
     res = zeros(eltype(A), (m*nx, n*nx))
@@ -43,7 +43,7 @@ function hadamard(A::Matrix,B::M) where {M<:Union{Matrix,SubMatrix}}
     end
     return res
 end
-hadamard(A::Vector, B::M) where {M<:Union{Matrix,SubMatrix}} = A .* B
+hadamard(A::AbstractVector, B::M) where {M<:Union{AbstractMatrix,SubMatrix}} = A .* B
 
 delu(x::Real, α=one(x)) = ifelse(x > 0.0, one(x), α*exp(x) )
 dtanh(x) = one(x) - tanh(x)*tanh(x)

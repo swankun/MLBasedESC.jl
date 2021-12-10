@@ -1,8 +1,10 @@
 using MLBasedESC
 using Flux
 using LinearAlgebra
+using ReverseDiff
 import DiffEqFlux
 using DiffEqFlux: FastChain, FastDense
+using OrdinaryDiffEq
 
 const M⁻¹ = inv(diagm([0.1, 0.2]))
 V(q) = [ 10.0*(cos(q[1]) - 1.0) ]
@@ -23,11 +25,50 @@ end
 
 Md⁻¹ = M⁻¹
 # Vd = SOSPoly(2,1:2)
+# Vd = FastChain(
+#     inmap,
+#     SOSPoly(4,1:2)
+# )
 Vd = FastChain(
-    inmap,
-    SOSPoly(4,1:2)
+        FastDense(4, 10, elu),
+        FastDense(10, 5, elu),
+        FastDense(5, 1, square),
 )
 P = IDAPBCProblem(2,M⁻¹,Md⁻¹,V,Vd,G,G⊥)
 L1 = PDELossPotential(P)
 ps = paramstack(P)
-L1(q,ps)
+
+function eom(x,u)
+    I1 = 0.0455
+    I2 = 0.00425
+    m3 = 0.183*9.81
+    q1, q2, q1dot, q2dot = x
+    [
+        q1dot,
+        q2dot,
+        m3*sin(q1)/I1 - u/I1,
+        u/I2
+    ]
+end
+# u(x,p) = controller(P,x,p)
+u(x,p) = sum(jacobian(Vd,x,p))/length(p)
+
+sys = ParametricControlSystem{false}(eom,u,4)
+prob = ODEProblem(sys, ps, (0.0, 3.0))
+L3(q,ps) = sum(abs2, trajectory(prob, q, ps, saveat=0.1, sensealg=DiffEqFlux.InterpolatingAdjoint())[:,end])
+dL3(q,ps) = ReverseDiff.gradient(_2->L3(q,_2), ps)
+
+
+# MWE ReverseDiff breaking
+function fiip(du,u,p,t)
+    du[1] = dx = p[1]*u[1] - p[2]*u[1]*u[2]
+    du[2] = dy = -p[3]*u[2] + p[4]*u[1]*u[2]
+  end
+p = [1.5,1.0,3.0,1.0]; u0 = [1.0;1.0]
+prob = ODEProblem(fiip,u0,(0.0,10.0),p)
+sol = solve(prob,Tsit5(),rtol=1e-6,atol=1e-6)
+function sum_of_solution(x)
+    _prob = remake(prob,u0=x[1:2],p=x[3:end])
+    sum(solve(_prob,Vern9(),rtol=1e-6,atol=1e-6,saveat=0.1))
+end
+dx = ReverseDiff.gradient(sum_of_solution,[u0;p])

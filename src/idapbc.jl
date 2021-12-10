@@ -105,14 +105,14 @@ function _∇Md⁻¹(P::IDAPBCProblem{J2,M,MD}, q, ps) where {J2,M,MD<:Function}
     jacobian(P.Md⁻¹, q, θMd)
 end
 function _∇Vd(P::IDAPBCProblem{J2,M,MD,V,VD}, q) where {J2,M,MD,V,VD<:Chain}
-    if isequal(length(last(P.Vd.layers).bias), P.N)
+    if isa(last(P.Vd.layers), Flux.Dense) && isequal(length(last(P.Vd.layers).bias), P.N)
         return jacobian(P.Vd, q)[:]
     else
         return P.Vd(q)
     end
 end
 function _∇Vd(P::IDAPBCProblem{J2,M,MD,V,VD}, q, ps) where {J2,M,V,MD<:Matrix,VD<:Function}
-    if VD<:FastChain && isequal(last(P.Vd.layers).out, P.N)
+    if isa(last(P.Vd.layers), DiffEqFlux.FastDense) && isequal(last(P.Vd.layers).out, P.N)
         return P.Vd(q, ps)
     else
         return jacobian(P.Vd, q, ps)[:]
@@ -120,8 +120,8 @@ function _∇Vd(P::IDAPBCProblem{J2,M,MD,V,VD}, q, ps) where {J2,M,V,MD<:Matrix,
 end
 function _∇Vd(P::IDAPBCProblem{J2,M,MD,V,VD}, q, ps) where {J2,M,V,MD<:Function,VD<:Function}
     _, θVd = unstack(P,ps)
-    if VD<:FastChain && isequal(last(P.Vd.layers).out, P.N)
-        return P.Vd(q, ps)
+    if isa(last(P.Vd.layers), DiffEqFlux.FastDense) && isequal(last(P.Vd.layers).out, P.N)
+        return P.Vd(q, θVd)
     else
         return jacobian(P.Vd, q, θVd)[:]
     end

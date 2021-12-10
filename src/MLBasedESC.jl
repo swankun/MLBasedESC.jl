@@ -5,6 +5,8 @@ module MLBasedESC
 # import Flux: Chain, Dense, relu, glorot_uniform, ADAM, throttle, Data, Optimise
 # using Zygote
 
+using OrdinaryDiffEq, SciMLBase
+
 # using LinearAlgebra
 # using Random: randperm
 using Revise
@@ -31,5 +33,6 @@ include("fluxhelpers/fluxhelpers.jl")
 include("idapbc.jl")
 include("soslayers.jl")
 include("constants.jl")
+include("systems/abstractsys.jl")
 
 end
