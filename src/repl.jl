@@ -50,25 +50,48 @@ function eom(x,u)
         u/I2
     ]
 end
+function eom!(dx,x,u)
+    I1 = 0.0455
+    I2 = 0.00425
+    m3 = 0.183*9.81
+    q1, q2, q1dot, q2dot = x
+    dx[1] = q1dot
+    dx[2] = q2dot
+    dx[3] = m3*sin(q1)/I1 - u/I1
+    dx[4] = u/I2
+end
 # u(x,p) = controller(P,x,p)
 u(x,p) = sum(jacobian(Vd,x,p))/length(p)
 
-sys = ParametricControlSystem{false}(eom,u,4)
+sys = ParametricControlSystem{!true}(eom,u,4)
 prob = ODEProblem(sys, ps, (0.0, 3.0))
-L3(q,ps) = sum(abs2, trajectory(prob, q, ps, saveat=0.1, sensealg=DiffEqFlux.InterpolatingAdjoint())[:,end])
-dL3(q,ps) = ReverseDiff.gradient(_2->L3(q,_2), ps)
-
-
-# MWE ReverseDiff breaking
-function fiip(du,u,p,t)
-    du[1] = dx = p[1]*u[1] - p[2]*u[1]*u[2]
-    du[2] = dy = -p[3]*u[2] + p[4]*u[1]*u[2]
-  end
-p = [1.5,1.0,3.0,1.0]; u0 = [1.0;1.0]
-prob = ODEProblem(fiip,u0,(0.0,10.0),p)
-sol = solve(prob,Tsit5(),rtol=1e-6,atol=1e-6)
-function sum_of_solution(x)
-    _prob = remake(prob,u0=x[1:2],p=x[3:end])
-    sum(solve(_prob,Vern9(),rtol=1e-6,atol=1e-6,saveat=0.1))
+function L3(q,ps)
+    #=
+    Adjoint method notes:
+    - Only ReverseDiffAdjoint() works for IDAPBC
+    - ReverseDiffAdjoint() tends to be the fastest w/ least mem usage
+    - For dim(x)=4, oop dynamics is faster
+    =#
+    sum(abs2, 
+        trajectory(
+            prob, q, ps, saveat=0.1, 
+            sensealg=DiffEqFlux.ReverseDiffAdjoint()
+        )[:,end]
+    )
 end
-dx = ReverseDiff.gradient(sum_of_solution,[u0;p])
+dL3(q,ps) = Flux.gradient(_2->L3(q,_2), ps)
+
+
+# # MWE ReverseDiff breaking
+# function fiip(du,u,p,t)
+#     du[1] = dx = p[1]*u[1] - p[2]*u[1]*u[2]
+#     du[2] = dy = -p[3]*u[2] + p[4]*u[1]*u[2]
+#   end
+# p = [1.5,1.0,3.0,1.0]; u0 = [1.0;1.0]
+# prob = ODEProblem(fiip,u0,(0.0,10.0),p)
+# sol = solve(prob,Tsit5(),rtol=1e-6,atol=1e-6)
+# function sum_of_solution(x)
+#     _prob = remake(prob,u0=x[1:2],p=x[3:end])
+#     sum(solve(_prob,Vern9(),rtol=1e-6,atol=1e-6,saveat=0.1))
+# end
+# dx = ReverseDiff.gradient(sum_of_solution,[u0;p])
