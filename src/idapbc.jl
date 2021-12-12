@@ -111,20 +111,27 @@ function _∇Vd(P::IDAPBCProblem{J2,M,MD,V,VD}, q) where {J2,M,MD,V,VD<:Chain}
         return P.Vd(q)
     end
 end
-function _∇Vd(P::IDAPBCProblem{J2,M,MD,V,VD}, q, ps) where {J2,M,V,MD<:Matrix,VD<:Function}
+function _∇Vd(P::IDAPBCProblem{J2,M,MD,V,VD}, q, ps) where {J2,M,V,MD<:Matrix,VD<:FastChain}
     if isa(last(P.Vd.layers), DiffEqFlux.FastDense) && isequal(last(P.Vd.layers).out, P.N)
         return P.Vd(q, ps)
     else
         return jacobian(P.Vd, q, ps)[:]
     end
 end
-function _∇Vd(P::IDAPBCProblem{J2,M,MD,V,VD}, q, ps) where {J2,M,V,MD<:Function,VD<:Function}
+function _∇Vd(P::IDAPBCProblem{J2,M,MD,V,VD}, q, ps) where {J2,M,V,MD<:Function,VD<:FastChain}
     _, θVd = unstack(P,ps)
     if isa(last(P.Vd.layers), DiffEqFlux.FastDense) && isequal(last(P.Vd.layers).out, P.N)
         return P.Vd(q, θVd)
     else
         return jacobian(P.Vd, q, θVd)[:]
     end
+end
+function _∇Vd(P::IDAPBCProblem{J2,M,MD,V,VD}, q, ps) where {J2,M,V,MD<:Matrix,VD<:Function}
+    return jacobian(P.Vd, q, ps)[:]
+end
+function _∇Vd(P::IDAPBCProblem{J2,M,MD,V,VD}, q, ps) where {J2,M,V,MD<:Function,VD<:Function}
+    _, θVd = unstack(P,ps)
+    return jacobian(P.Vd, q, θVd)[:]
 end
 
 interconnection(P::IDAPBCProblem{Nothing}, x, ::Any=nothing) = 0
@@ -177,24 +184,28 @@ end
 
 function controller(P::IDAPBCProblem, x; kv=1)
     N = P.N
-    q, p = x[1:N], x[N+1:2N]
+    q, qdot = x[1:N], x[N+1:2N]
     G⁻¹ = (P.G'*P.G)\(P.G')
     M⁻¹ = _M⁻¹(P,q)
     Md⁻¹ = _Md⁻¹(P,q)
     MdM⁻¹ = Md⁻¹ \ M⁻¹
-    u_es = G⁻¹ * ( ∇H(P,x) - MdM⁻¹*∇Hd(P,x) + interconnection(P,x)*Md⁻¹*p )
-    u_di = -kv * dot(P.G, Md⁻¹*p)
+    momentum = M⁻¹ \ qdot
+    xbar = [q; momentum]
+    u_es = G⁻¹ * ( ∇H(P,xbar) - MdM⁻¹*∇Hd(P,xbar) + interconnection(P,xbar)*Md⁻¹*momentum )
+    u_di = -kv * dot(P.G, Md⁻¹*momentum)
     return u_es + u_di
 end
 function controller(P::IDAPBCProblem, x, ps; kv=1)
     N = P.N
-    q, p = x[1:N], x[N+1:2N]
+    q, qdot = x[1:N], x[N+1:2N]
     G⁻¹ = (P.G'*P.G)\(P.G')
     M⁻¹ = _M⁻¹(P,q)
     Md⁻¹ = _Md⁻¹(P,q,ps)
     MdM⁻¹ = Md⁻¹ \ M⁻¹
-    u_es = G⁻¹ * ( ∇H(P,x) - MdM⁻¹*∇Hd(P,x,ps) + interconnection(P,x,ps)*Md⁻¹*p )
-    u_di = -kv * dot(P.G, Md⁻¹*p)
+    momentum = M⁻¹ \ qdot
+    xbar = [q; momentum]
+    u_es = G⁻¹ * ( ∇H(P,xbar) - MdM⁻¹*∇Hd(P,xbar,ps) + interconnection(P,xbar,ps)*Md⁻¹*momentum )
+    u_di = -kv * dot(P.G, Md⁻¹*momentum)
     return u_es + u_di
 end
 
