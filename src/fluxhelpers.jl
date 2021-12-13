@@ -1,15 +1,6 @@
 export jacobian, derivative, @posdef, @odd, @skewsym, square
 export makeposdef, makeodd, makeskewsym
 
-using Base: front, tail
-using LinearAlgebra
-
-import Flux
-import DiffEqFlux
-using Flux: Chain, Dense, elu
-using DiffEqFlux: FastChain, FastDense
-
-
 function ltril(v::AbstractVector)
     N = length(v)
     M = isqrt(N)
