@@ -21,7 +21,7 @@ SOSPoly(n::Int,d::Int;initL=Flux.glorot_uniform) = SOSPoly(n,0:d;initL=initL)
 fsubs(S::SOSPoly,v,x) = map(m->m(S.vars=>x), v)
 
 function (S::SOSPoly{N,M})(x, p) where {N,M}
-    xbar = map(m->m(S.vars=>x), S.mon)
+    xbar = fsubs(S, S.mon, x)
     L = LowerTriangular(reshape(p,M,M))
     v = L' * xbar
     dot(v,v)
