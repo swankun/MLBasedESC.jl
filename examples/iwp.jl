@@ -1,11 +1,21 @@
 using MLBasedESC
-using Flux
+
 using LinearAlgebra
-using ForwardDiff
-using ReverseDiff
+
+import ForwardDiff
+import ReverseDiff
+
+import Flux
+using Flux: Chain, Dense, elu
 import DiffEqFlux
 using DiffEqFlux: FastChain, FastDense
+
 using OrdinaryDiffEq
+
+
+#==============================================================================
+Constants
+==============================================================================#
 
 const I1 = 0.0455
 const I2 = 0.00425
@@ -27,18 +37,6 @@ function MLBasedESC.jacobian(::typeof(inmap), q,::Any=nothing)
     ]
 end
 
-Md⁻¹ = M⁻¹
-# Vd = SOSPoly(2,1:2)
-# Vd = FastChain(
-#     inmap,
-#     SOSPoly(4,1:2)
-# )
-Vd = FastChain(
-        FastDense(2, 10, elu),
-        FastDense(10, 5, elu),
-        FastDense(5, 1, square),
-)
-
 const trueMd = [1.0 -1.01; -1.01 1.02025]
 # const trueMd = [5.0 -10.0; -10.0 20.0+1e-6]
 # const trueMd = [0.1I1 -I1*0.11; -I1*0.11 I2*10]
@@ -51,26 +49,10 @@ trueVd(q,ps) = begin
     z = q[2] + γ2*q[1]
     return [I1*m3/(a1+a2)*cos(q[1]) + 0.5*k1*z^2]
 end
-function MLBasedESC.jacobian(::typeof(trueVd), q,ps)
+function MLBasedESC.jacobian(::typeof(trueVd), q, ps=nothing)
     ForwardDiff.jacobian(_1->trueVd(_1,ps), q)
 end
 
-# P = IDAPBCProblem(2,M⁻¹,Md⁻¹,V,Vd,G,G⊥)
-P = IDAPBCProblem(2,M⁻¹,trueMd⁻¹,V,trueVd,G,G⊥)
-L1 = PDELossPotential(P)
-ps = paramstack(P)
-q = [3., 0.]
-u_idapbc(x,p) = controller(P,x,p,kv=20)
-
-function eom(x,u)
-    q1, q2, q1dot, q2dot = x
-    [
-        q1dot,
-        q2dot,
-        m3*sin(q1)/I1 - u/I1,
-        u/I2
-    ]
-end
 function eom!(dx,x,u)
     q1, q2, q1dot, q2dot = x
     dx[1] = q1dot
@@ -78,52 +60,59 @@ function eom!(dx,x,u)
     dx[3] = m3*sin(q1)/I1 - u/I1
     dx[4] = u/I2
 end
-
-
-Hd = FastChain(
-    FastDense(4, 10, elu),
-    FastDense(10, 5, elu),
-    FastDense(5, 1)
-)
-ps2 = DiffEqFlux.initial_params(Hd)
-u_neuralpbc(x,p) = sum(jacobian(Hd,x,p))/length(p)
-
-sys = ParametricControlSystem{true}(eom!,u_idapbc,4)
-prob = ODEProblem(sys, ps, (0.0, 3.0))
-x0 = [q; 0.0; 0.0]
-# sys = ParametricControlSystem{!true}(eom,u_neuralpbc,4)
-# prob = ODEProblem(sys, ps2, (0.0, 3.0))
-
-
-function L3(q,ps)
-    #=
-    Adjoint method notes:
-    - InterpolatingAdjoint() with oop dynamics works w/ IDAPBC
-    - ReverseDiffAdjoint() with in-place dynamics works w/ IDAPBC
-    - ReverseDiffAdjoint() tends to be the fastest w/ least mem usage
-    - For dim(x)=4, oop dynamics is faster
-    =#
-    sum(abs2, 
-        trajectory(
-            prob, q, ps; 
-            saveat=0.1,
-            sensealg=DiffEqFlux.ReverseDiffAdjoint()
-        )[[1,3,4],end]
-    )
+function eom(x,u)
+    dx = similar(x)
+    q1, q2, q1dot, q2dot = x
+    eom!(dx,x,u)
+    return dx
 end
-dL3(q,ps) = Flux.gradient(_2->L3(q,_2), ps)
+
+#==============================================================================
+IDAPBC
+==============================================================================#
+
+function build_idapbc_model()
+    Md⁻¹ = trueMd⁻¹
+    Vd = Chain(
+        Dense(2, 10, elu; bias=false),
+        Dense(10, 5, elu; bias=false),
+        Dense(5, 1, square; bias=false),
+    )
+    # Vd = SOSPoly(2,1:2)
+    # Vd = FastChain(
+    #     inmap,
+    #     SOSPoly(4,1:2)
+    # )
+    # Vd = FastChain(
+    #         FastDense(2, 10, elu; bias=false),
+    #         FastDense(10, 5, elu; bias=false),
+    #         FastDense(5, 1, square; bias=false),
+    # )
+    P = IDAPBCProblem(2,M⁻¹,trueMd⁻¹,V,Vd,G,G⊥)
+    ps = Vd isa Function ? paramstack(P) : Flux.params(MLBasedESC.trainable(P)...)
+    return P, ps
+end
 
 
-# # MWE ReverseDiff breaking
-# function fiip(du,u,p,t)
-#     du[1] = dx = p[1]*u[1] - p[2]*u[1]*u[2]
-#     du[2] = dy = -p[3]*u[2] + p[4]*u[1]*u[2]
-#   end
-# p = [1.5,1.0,3.0,1.0]; u0 = [1.0;1.0]
-# prob = ODEProblem(fiip,u0,(0.0,10.0),p)
-# sol = solve(prob,Tsit5(),rtol=1e-6,atol=1e-6)
-# function sum_of_solution(x)
-#     _prob = remake(prob,u0=x[1:2],p=x[3:end])
-#     sum(solve(_prob,Vern9(),rtol=1e-6,atol=1e-6,saveat=0.1))
-# end
-# dx = ReverseDiff.gradient(sum_of_solution,[u0;p])
+function train!(P, ps; dq=0.1pi)
+    L1 = PDELossPotential(P)
+    data = ([q1,q2] for q1 in -2pi:dq:2pi for q2 in -2pi:dq:2pi)
+    optimize!(L1,ps,collect(data))
+end
+
+function simulate(P, ps::Flux.Params; x0=[3.,0,0,0], tf=3.0, kv=1)
+    u_idapbc(x,p) = controller(P,x,kv=kv)
+    sys = ParametricControlSystem{true}(eom!,u_idapbc,4)
+    prob = ODEProblem(sys, (0.0, tf))
+    trajectory(prob, x0; saveat=0.1)
+end
+function simulate(P, ps::AbstractVector; x0=[3.,0,0,0], tf=3.0, kv=1)
+    u_idapbc(x,p) = controller(P,x,p,kv=kv)
+    sys = ParametricControlSystem{true}(eom!,u_idapbc,4)
+    prob = ODEProblem(sys, ps, (0.0, tf))
+    trajectory(prob, x0, ps; saveat=0.1)
+end
+
+# P, θ = build_idapbc_model()
+# train!(P, θ)
+# simulate(P, θ)

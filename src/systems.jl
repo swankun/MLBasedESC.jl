@@ -21,11 +21,18 @@ end
 create_closedloop(sys::PCS{true}) = (dx,x,p,t) -> sys.f(dx, x, sys.u(x,p))
 create_closedloop(sys::PCS{false}) = (x,p,t) -> sys.f(x, sys.u(x,p))
 
+function SciMLBase.ODEProblem(sys::PCS{iip}, tspan; x0=sys.x0) where {iip}
+    f = create_closedloop(sys)
+    ode = ODEProblem{iip}(f, x0, tspan)
+end
 function SciMLBase.ODEProblem(sys::PCS{iip}, θ, tspan; x0=sys.x0) where {iip}
     f = create_closedloop(sys)
     ode = ODEProblem{iip}(f, x0, tspan, θ)
 end
 
+function trajectory(integ::ODEProblem, x0; odekwargs...)
+    Array(solve(remake(integ, u0=x0), Tsit5(); odekwargs...))
+end
 function trajectory(integ::ODEProblem, x0, θ; odekwargs...)
     Array(solve(remake(integ, u0=x0), Tsit5(), p=θ; odekwargs...))
 end

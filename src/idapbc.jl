@@ -2,6 +2,7 @@ export IDAPBCProblem, PDELossKinetic, PDELossPotential
 export kineticpde, potentialpde
 export trainable, unstack, paramstack
 export hamiltonian, hamiltoniand, interconnection, controller
+export gradient
 
 const UFA = Union{T,C} where {T<:Function, C<:Chain}
 const J2Chain = NTuple{N,<:Chain} where {N}
@@ -105,10 +106,10 @@ function _∇Md⁻¹(P::IDAPBCProblem{J2,M,MD}, q, ps) where {J2,M,MD<:Function}
     jacobian(P.Md⁻¹, q, θMd)
 end
 function _∇Vd(P::IDAPBCProblem{J2,M,MD,V,VD}, q) where {J2,M,MD,V,VD<:Chain}
-    if isa(last(P.Vd.layers), Flux.Dense) && isequal(length(last(P.Vd.layers).bias), P.N)
-        return jacobian(P.Vd, q)[:]
-    else
+    if isa(last(P.Vd.layers), Flux.Dense) && isequal(size(last(P.Vd.layers).weight,1), P.N)
         return P.Vd(q)
+    else
+        return jacobian(P.Vd, q)[:]
     end
 end
 function _∇Vd(P::IDAPBCProblem{J2,M,MD,V,VD}, q, ps) where {J2,M,V,MD<:Matrix,VD<:FastChain}
@@ -209,9 +210,18 @@ function controller(P::IDAPBCProblem, x, ps; kv=1)
     return u_es + u_di
 end
 
-abstract type IDAPBCLoss end
+abstract type IDAPBCLoss{P} end
 
-struct PDELossKinetic{hasJ2,P} <: IDAPBCLoss
+function gradient(l::IDAPBCLoss{P}, q, ps::AbstractVector) where 
+    {J2,M,MD,V,VD<:Function,P<:IDAPBCProblem{J2,M,MD,V,VD}}
+    ReverseDiff.gradient(_2->l(q,_2), ps)
+end
+function gradient(l::IDAPBCLoss{P}, q, ps::Flux.Params) where 
+    {J2,M,MD,V,VD<:Chain,P<:IDAPBCProblem{J2,M,MD,V,VD}}
+    Flux.gradient(()->l(q), ps)
+end
+
+struct PDELossKinetic{hasJ2,P} <: IDAPBCLoss{P}
     prob::P
     function PDELossKinetic(prob::P) where {J2,P<:IDAPBCProblem{J2}}
         new{J2!==Nothing,P}(prob)
@@ -264,7 +274,7 @@ function (L::PDELossKinetic{true})(q,ps)
 end
 
 
-struct PDELossPotential{P} <: IDAPBCLoss
+struct PDELossPotential{P} <: IDAPBCLoss{P}
     prob::P
 end
 function (L::PDELossPotential)(q) 
@@ -273,7 +283,7 @@ function (L::PDELossPotential)(q)
     ∇Vd = _∇Vd(p, q)
     M⁻¹ = _M⁻¹(p, q)
     Md⁻¹ = _Md⁻¹(p, q)
-    potentialpde(M⁻¹, Md⁻¹, ∇V, ∇Vd, p.G⊥)
+    abs(potentialpde(M⁻¹, Md⁻¹, ∇V, ∇Vd, p.G⊥))
 end
 function (L::PDELossPotential)(q,ps)
     p = L.prob
@@ -281,10 +291,10 @@ function (L::PDELossPotential)(q,ps)
     ∇Vd = _∇Vd(p, q, ps)
     M⁻¹ = _M⁻¹(p, q)
     Md⁻¹ = _Md⁻¹(p, q, ps)
-    potentialpde(M⁻¹, Md⁻¹, ∇V, ∇Vd, p.G⊥)
+    abs(potentialpde(M⁻¹, Md⁻¹, ∇V, ∇Vd, p.G⊥))
 end
 
-struct PotentialHessianSymLoss{P} <: IDAPBCLoss
+struct PotentialHessianSymLoss{P} <: IDAPBCLoss{P}
     prob::P 
     function PotentialHessianSymLoss(p::IDAPBCProblem{J,M,MD,V,VD}) where 
         {J,M,MD,V,VD<:Chain}

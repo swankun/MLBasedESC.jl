@@ -68,7 +68,11 @@ const InputDense = Tuple{<:Function,Vararg{Dense,N}} where {N}
 function (a::Dense)(x::AbstractVecOrMat, s::ActivationMode)
     s === DefaultActivation && return a(x)
     W, b = a.weight, a.bias
-    return W*x .+ b
+    if b === Flux.Zeros() 
+        return W*x 
+    else 
+        return W*x .+ b
+    end
 end
 
 function _applychain(fs::DenseLayers, x)
@@ -129,7 +133,11 @@ const InputFastDense = Tuple{<:Function,Vararg{FastDense,N}} where {N}
 function (a::FastDense)(x::AbstractVecOrMat, p, s::ActivationMode)
     s === DefaultActivation && return a(x, p)
     W, b = param2Wb(a, p)
-    return W*x .+ b
+    if a.bias
+        return W*x .+ b
+    else
+        return W*x
+    end
 end
 function _applychain(fs::FastDenseLayers, x, p)
     ps = paramslice(fs,p)
