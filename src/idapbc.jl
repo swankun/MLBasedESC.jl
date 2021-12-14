@@ -105,6 +105,14 @@ function _∇Md⁻¹(P::IDAPBCProblem{J2,M,MD}, q, ps) where {J2,M,MD<:Function}
     θMd = first(unstack(P, ps))
     jacobian(P.Md⁻¹, q, θMd)
 end
+_Vd(P::IDAPBCProblem{J2,M,MD,V,VD}, q) where {J2,M,MD,V,VD<:Chain} = P.Vd(q)
+function _Vd(P::IDAPBCProblem{J2,M,MD,V,VD}, q, ps) where {J2,M,MD<:Matrix,V,VD<:Function} 
+    P.Vd(q, ps)
+end
+function _Vd(P::IDAPBCProblem{J2,M,MD,V,VD}, q, ps) where {J2,M,MD<:Function,V,VD<:Function} 
+    _, θVd = unstack(P, ps)
+    P.Vd(q, θVd)
+end
 function _∇Vd(P::IDAPBCProblem{J2,M,MD,V,VD}, q) where {J2,M,MD,V,VD<:Chain}
     if isa(last(P.Vd.layers), Flux.Dense) && isequal(size(last(P.Vd.layers).weight,1), P.N)
         return P.Vd(q)

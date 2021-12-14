@@ -6,6 +6,7 @@ import ForwardDiff
 import ReverseDiff
 
 import Flux
+import Flux.NNlib
 using Flux: Chain, Dense, elu
 import DiffEqFlux
 using DiffEqFlux: FastChain, FastDense
@@ -26,7 +27,14 @@ MLBasedESC.jacobian(::typeof(V), q) = [-m3*sin(q[1]), zero(eltype(q))]
 const G = [-1.0, 1.0]
 const G⊥ = [1.0 1.0]
 
-inmap(q,::Any=nothing) = [1-cos(q[1]); sin(q[1]); 1-cos(q[2]); sin(q[2])]
+function inmap(q,::Any=nothing)
+    return [
+        1-cos(q[1])
+        sin(q[1])
+        1-cos(q[2])
+        sin(q[2])
+    ]
+end
 function MLBasedESC.jacobian(::typeof(inmap), q,::Any=nothing)
     qbar = inmap(q)
     [
@@ -86,10 +94,9 @@ function build_idapbc_model()
     #     SOSPoly(4,1:2)
     # )
     Vd = FastChain(
-        inmap,
-        FastDense(4, 16, elu; bias=false),
-        FastDense(16, 48, elu; bias=false),
-        FastDense(48, 10, elu; bias=false),
+        # inmap, FastDense(4, 10, elu; bias=false),
+        FastDense(2, 10, elu; bias=false),
+        FastDense(10, 10, elu; bias=false),
         FastDense(10, 1, square; bias=false),
     )
     P = IDAPBCProblem(2,M⁻¹,Md⁻¹,V,Vd,G,G⊥)
@@ -102,23 +109,31 @@ function build_idapbc_model()
 end
 
 
-function train!(P, ps; dq=0.1pi)
+function train!(P, ps; dq=0.1pi, kwargs...)
     L1 = PDELossPotential(P)
-    data = ([q1,q2] for q1 in -2pi:dq:2pi for q2 in -2pi:dq:2pi)
-    optimize!(L1,ps,collect(data))
+    data = ([q1,q2] for q1 in -pi:dq:pi for q2 in -pi:dq:pi)
+    optimize!(L1,ps,collect(data);kwargs...)
 end
 
 function simulate(P, ps::Flux.Params; x0=[3.,0,0,0], tf=3.0, kv=1)
-    u_idapbc(x,p) = controller(P,x,kv=kv)
+    # u_idapbc(x,p) = controller(P,x,kv=kv)
+    u_idapbc(x,p) = begin
+        xbar = [rem2pi.(x[1:2], RoundNearest); x[3:end]]
+        controller(P,xbar,kv=kv)
+    end
     sys = ParametricControlSystem{true}(eom!,u_idapbc,4)
     prob = ODEProblem(sys, (0.0, tf))
-    trajectory(prob, x0; saveat=0.1)
+    trajectory(prob, x0; saveat=range(0.0,tf,length=101))
 end
 function simulate(P, ps::AbstractVector; x0=[3.,0,0,0], tf=3.0, kv=1)
-    u_idapbc(x,p) = controller(P,x,p,kv=kv)
+    # u_idapbc(x,p) = controller(P,x,p,kv=kv)
+    u_idapbc(x,p) = begin
+        xbar = [rem2pi.(x[1:2], RoundNearest); x[3:end]]
+        controller(P,xbar,p,kv=kv)
+    end
     sys = ParametricControlSystem{true}(eom!,u_idapbc,4)
     prob = ODEProblem(sys, ps, (0.0, tf))
-    trajectory(prob, x0, ps; saveat=0.1)
+    trajectory(prob, x0, ps; saveat=range(0.0,tf,length=101))
 end
 
 # P, θ = build_idapbc_model()
