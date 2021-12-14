@@ -93,6 +93,9 @@ _M⁻¹(P::IDAPBCProblem{J2,M}, ::Any) where {J2,M<:Matrix} = P.M⁻¹
 _M⁻¹(P::IDAPBCProblem{J2,M}, q) where {J2,M<:Function} = P.M⁻¹(q)
 _Md⁻¹(P::IDAPBCProblem{J2,M,MD}, q, ::Any=nothing) where {J2,M,MD<:Matrix} = P.Md⁻¹
 _Md⁻¹(P::IDAPBCProblem{J2,M,MD}, q) where {J2,M,MD<:Chain} = P.Md⁻¹(q)
+function _Md⁻¹(P::IDAPBCProblem{J2,M,MD}, q) where {J2,M,MD<:Function} 
+    P.Md⁻¹(q)
+end
 function _Md⁻¹(P::IDAPBCProblem{J2,M,MD}, q, ps) where {J2,M,MD<:Function} 
     θMd = first(unstack(P, ps))
     P.Md⁻¹(q, θMd)
@@ -104,6 +107,9 @@ _∇Md⁻¹(P::IDAPBCProblem{J2,M,MD}, q) where {J2,M,MD<:Chain} = jacobian(P.Md
 function _∇Md⁻¹(P::IDAPBCProblem{J2,M,MD}, q, ps) where {J2,M,MD<:Function} 
     θMd = first(unstack(P, ps))
     jacobian(P.Md⁻¹, q, θMd)
+end
+function _∇Md⁻¹(P::IDAPBCProblem{J2,M,MD}, q) where {J2,M,MD<:Function} 
+    jacobian(P.Md⁻¹, q)
 end
 _Vd(P::IDAPBCProblem{J2,M,MD,V,VD}, q) where {J2,M,MD,V,VD<:Chain} = P.Vd(q)
 function _Vd(P::IDAPBCProblem{J2,M,MD,V,VD}, q, ps) where {J2,M,MD<:Matrix,V,VD<:Function} 

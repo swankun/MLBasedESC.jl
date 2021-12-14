@@ -26,7 +26,12 @@ V(q) = [ m3*(cos(q[1]) - 1.0) ]
 MLBasedESC.jacobian(::typeof(V), q) = [-m3*sin(q[1]), zero(eltype(q))]
 const G = [-1.0, 1.0]
 const G⊥ = [1.0 1.0]
-const LQR = [-7.409595362575457, 0.05000000000000429, -1.1791663255097424, -0.03665716263249201];
+const LQR = [
+    -7.409595362575457
+    0.05000000000000429
+    -1.1791663255097424
+    -0.03665716263249201
+]
 
 function inmap(q,::Any=nothing)
     return [
@@ -84,10 +89,10 @@ function build_idapbc_model()
     # Md⁻¹ = trueMd⁻¹
     Md⁻¹ = PSDMatrix(2, ()->inv(diagm([0.1, sqrt(0.02)])))
     # Vd = Chain(
-    #     inmap,
+    #     # inmap, Dense(4, 10, elu; bias=false),
     #     Dense(2, 10, elu; bias=false),
-    #     Dense(10, 5, elu; bias=false),
-    #     Dense(5, 1, square; bias=false),
+    #     Dense(10, 10, elu; bias=false),
+    #     Dense(10, 1, square; bias=false),
     # )
     # Vd = SOSPoly(2,1:2)
     # Vd = FastChain(
