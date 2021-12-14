@@ -26,6 +26,7 @@ V(q) = [ m3*(cos(q[1]) - 1.0) ]
 MLBasedESC.jacobian(::typeof(V), q) = [-m3*sin(q[1]), zero(eltype(q))]
 const G = [-1.0, 1.0]
 const G⊥ = [1.0 1.0]
+const LQR = [-7.409595362575457, 0.05000000000000429, -1.1791663255097424, -0.03665716263249201];
 
 function inmap(q,::Any=nothing)
     return [
@@ -115,21 +116,35 @@ function train!(P, ps; dq=0.1pi, kwargs...)
     optimize!(L1,ps,collect(data);kwargs...)
 end
 
-function simulate(P, ps::Flux.Params; x0=[3.,0,0,0], tf=3.0, kv=1)
+function simulate(P, ps::Flux.Params; x0=[3.,0,0,0], tf=3.0, kv=1, umax=Inf)
     # u_idapbc(x,p) = controller(P,x,kv=kv)
     u_idapbc(x,p) = begin
         xbar = [rem2pi.(x[1:2], RoundNearest); x[3:end]]
-        controller(P,xbar,kv=kv)
+        q1, q2, q1dot, q2dot = xbar
+        effort = zero(q1)
+        if (1-cos(q1) < 1-cosd(10)) && abs(q1dot) < 5
+            effort = -dot(LQR, [sin(q1), sin(q2), q1dot, q2dot])
+        else
+            effort = controller(P,xbar,kv=kv)
+        end
+        return clamp(effort, -umax, umax)
     end
     sys = ParametricControlSystem{true}(eom!,u_idapbc,4)
     prob = ODEProblem(sys, (0.0, tf))
     trajectory(prob, x0; saveat=range(0.0,tf,length=101))
 end
-function simulate(P, ps::AbstractVector; x0=[3.,0,0,0], tf=3.0, kv=1)
+function simulate(P, ps::AbstractVector; x0=[3.,0,0,0], tf=3.0, kv=1, umax=Inf)
     # u_idapbc(x,p) = controller(P,x,p,kv=kv)
     u_idapbc(x,p) = begin
         xbar = [rem2pi.(x[1:2], RoundNearest); x[3:end]]
-        controller(P,xbar,p,kv=kv)
+        q1, q2, q1dot, q2dot = xbar
+        effort = zero(q1)
+        if (1-cos(q1) < 1-cosd(10)) && abs(q1dot) < 5
+            effort = -dot(LQR, [sin(q1), sin(q2), q1dot, q2dot])
+        else
+            effort = controller(P,xbar,p,kv=kv)
+        end
+        return clamp(effort, -umax, umax)
     end
     sys = ParametricControlSystem{true}(eom!,u_idapbc,4)
     prob = ODEProblem(sys, ps, (0.0, tf))
@@ -138,4 +153,4 @@ end
 
 # P, θ = build_idapbc_model()
 # train!(P, θ)
-# simulate(P, θ)
+# simulate(P, θ, kv=1, tf=14.0, umax=1.5)
