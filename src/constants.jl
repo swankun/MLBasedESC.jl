@@ -1,14 +1,18 @@
 export PSDMatrix, jacobian
 
-struct PSDMatrix{N,T} <: Function where {N<:Integer,T<:DataType} 
+struct PSDMatrix{N,T,F} <: Function where {N<:Integer,T<:DataType} 
     data::Vector{T}
+    initial_params::F
 end
 
-PSDMatrix(T::DataType, N::Integer) = PSDMatrix{N,T}(T.(vec(Flux.glorot_uniform(N,N))))
-PSDMatrix(N::Integer) = PSDMatrix(Float32,N)
+function PSDMatrix(T::DataType, N::Integer, init::Function)
+    PSDMatrix{N,T,typeof(init)}( T.(init()), init )
+end
+PSDMatrix(N::Integer, init::Function) = PSDMatrix(Float32,N,()->vec(init()))
+PSDMatrix(N::Integer) = PSDMatrix(N,()->vec(Flux.glorot_uniform(N,N)))
 
-function DiffEqFlux.initial_params(::PSDMatrix{N,T}) where {T,N}
-    T.(vec(Flux.glorot_uniform(N,N)))
+function DiffEqFlux.initial_params(P::PSDMatrix{N,T}) where {T,N}
+    T.(P.initial_params())
 end
 DiffEqFlux.paramlength(::PSDMatrix{N}) where {N} = N*N
 

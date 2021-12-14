@@ -26,14 +26,14 @@ MLBasedESC.jacobian(::typeof(V), q) = [-m3*sin(q[1]), zero(eltype(q))]
 const G = [-1.0, 1.0]
 const G⊥ = [1.0 1.0]
 
-inmap(q,::Any=nothing) = [cos(q[1]); sin(q[1]); cos(q[2]); sin(q[2])]
+inmap(q,::Any=nothing) = [1-cos(q[1]); sin(q[1]); 1-cos(q[2]); sin(q[2])]
 function MLBasedESC.jacobian(::typeof(inmap), q,::Any=nothing)
     qbar = inmap(q)
     [
-        -qbar[2] 0
-         qbar[1] 0
-         0 -qbar[4] 
-         0  qbar[3] 
+        qbar[2] 0
+        1-qbar[1] 0
+        0 qbar[4] 
+        0 1-qbar[3] 
     ]
 end
 
@@ -72,24 +72,32 @@ IDAPBC
 ==============================================================================#
 
 function build_idapbc_model()
-    Md⁻¹ = trueMd⁻¹
-    Vd = Chain(
-        Dense(2, 10, elu; bias=false),
-        Dense(10, 5, elu; bias=false),
-        Dense(5, 1, square; bias=false),
-    )
+    # Md⁻¹ = trueMd⁻¹
+    Md⁻¹ = PSDMatrix(2, ()->inv(diagm([0.1, sqrt(0.02)])))
+    # Vd = Chain(
+    #     inmap,
+    #     Dense(2, 10, elu; bias=false),
+    #     Dense(10, 5, elu; bias=false),
+    #     Dense(5, 1, square; bias=false),
+    # )
     # Vd = SOSPoly(2,1:2)
     # Vd = FastChain(
     #     inmap,
     #     SOSPoly(4,1:2)
     # )
-    # Vd = FastChain(
-    #         FastDense(2, 10, elu; bias=false),
-    #         FastDense(10, 5, elu; bias=false),
-    #         FastDense(5, 1, square; bias=false),
-    # )
-    P = IDAPBCProblem(2,M⁻¹,trueMd⁻¹,V,Vd,G,G⊥)
-    ps = Vd isa Function ? paramstack(P) : Flux.params(MLBasedESC.trainable(P)...)
+    Vd = FastChain(
+        inmap,
+        FastDense(4, 16, elu; bias=false),
+        FastDense(16, 48, elu; bias=false),
+        FastDense(48, 10, elu; bias=false),
+        FastDense(10, 1, square; bias=false),
+    )
+    P = IDAPBCProblem(2,M⁻¹,Md⁻¹,V,Vd,G,G⊥)
+    if Vd isa Function
+        ps = paramstack(P)
+    else 
+        ps = Flux.params(MLBasedESC.trainable(P)...)
+    end
     return P, ps
 end
 
