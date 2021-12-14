@@ -63,36 +63,42 @@ function Base.show(io::IO, p::IDAPBCProblem)
     println(io, "J2   => $(typeof(p.J2).name.name)");
 end
 function Base.getindex(P::IDAPBCProblem, sym::Symbol) 
-    isimplicit = false
-    for f in trainable(P)
-        isimplicit = isimplicit || isa(f, Chain) 
-    end
-    warnmsg = "This is an implicit-parameter model." 
-    warnmsg *= " Parameters passsed as arguments are ignored\n"
-    warnmsg *= "Avoid this warning by using single-argument function calls"
-    warnignore(ps) = !ismissing(ps) && @warn warnmsg
     if sym === :Md
-        if isimplicit
-            return (q,ps=missing)->begin warnignore(ps); inv(_Md⁻¹(P,q)) end
+        if isimplicit(P)
+            return (q,::Any=missing)->inv(_Md⁻¹(P,q))
         else
             return (q,ps)->inv(_Md⁻¹(P,q,ps))
         end
     elseif sym === :Mdinv
-        if isimplicit
-            return (q,ps=missing)->begin warnignore(ps); _Md⁻¹(P,q) end
+        if isimplicit(P)
+            return (q,::Any=missing)->_Md⁻¹(P,q)
         else
             return (q,ps)->_Md⁻¹(P,q,ps)
         end
     elseif sym === :Vd
-        if isimplicit
-            return (q,ps=missing)->begin warnignore(ps); _Vd(P,q) end
+        if isimplicit(P)
+            return (q,::Any=missing)->_Vd(P,q)
         else
             return (q,ps)->_Vd(P,q,ps)
         end
+    elseif sym === :Hd
+        if isimplicit(P)
+            function (x,::Any=missing)
+                q, qdot = x[1:P.N], x[P.N+1:end]
+                momentum = _M⁻¹(P,q) \ qdot
+                hamiltoniand(P, [q; momentum])
+            end
+        else
+            function (x,ps)
+                q, qdot = x[1:P.N], x[P.N+1:end]
+                momentum = _M⁻¹(P,q) \ qdot
+                hamiltoniand(P, [q; momentum], ps)
+            end
+        end
     elseif sym === :J2
         isnothing(P.J2) && return nothing
-        if isimplicit
-            return (q,ps=missing)->begin warnignore(ps); interconnection(P,q) end
+        if isimplicit(P)
+            return (q,::Any=missing)->interconnection(P,q)
         else
             return (q,ps)->interconnection(P,q,ps)
         end
@@ -100,6 +106,7 @@ function Base.getindex(P::IDAPBCProblem, sym::Symbol)
 end
 
 hasfreevariables(::IDAPBCProblem{J2}) where {J2} = J2===Nothing
+isimplicit(P::IDAPBCProblem) = any(f->isa(f,Chain), trainable(P))
 
 function kineticpde(M⁻¹, Md⁻¹, ∇M⁻¹, ∇Md⁻¹, G⊥, J2=0) 
     return G⊥ * (∇M⁻¹' - (Md⁻¹\M⁻¹)*∇Md⁻¹' + J2*Md⁻¹)
@@ -202,33 +209,37 @@ function interconnection(P::IDAPBCProblem{<:J2FChain}, x, ps)
     end
 end
 
-function hamiltonian(P::IDAPBCProblem, x)
+function hamiltonian(P::IDAPBCProblem, qp)
     N = P.N
-    q, p = x[1:N], x[N+1:2N]
+    q, p = qp[1:N], qp[N+1:2N]
     dot(p, _M⁻¹(P, q)*p)/2 + first(P.V(q))
 end
-function ∇H(P::IDAPBCProblem, x)
+function ∇H(P::IDAPBCProblem, qp)
     N = P.N
-    q, p = x[1:N], x[N+1:2N]
+    q, p = qp[1:N], qp[N+1:2N]
     ∇M⁻¹ = _∇M⁻¹(P, q)
     (mapreduce(*,+,∇M⁻¹,p)'*p)/2 + jacobian(P.V, q)[:]
 end
 
-function hamiltoniand(P::IDAPBCProblem, x)
-    !isone(length(last(P.Vd.layers).bias)) && return NaN
+function hamiltoniand(P::IDAPBCProblem, qp)
     N = P.N
-    q, p = x[1:N], x[N+1:2N]
-    dot(p, _Md⁻¹(P, q)*p)/2 + first(P.Vd(q))
+    q, p = qp[1:N], qp[N+1:2N]
+    dot(p, _Md⁻¹(P, q)*p)/2 + first(_Vd(P,q))
 end
-function ∇Hd(P::IDAPBCProblem, x)
+function hamiltoniand(P::IDAPBCProblem, qp, ps)
     N = P.N
-    q, p = x[1:N], x[N+1:2N]
+    q, p = qp[1:N], qp[N+1:2N]
+    dot(p, _Md⁻¹(P, q, ps)*p)/2 + first(_Vd(P,q,ps))
+end
+function ∇Hd(P::IDAPBCProblem, qp)
+    N = P.N
+    q, p = qp[1:N], qp[N+1:2N]
     ∇Md⁻¹ = _∇Md⁻¹(P, q)
     (mapreduce(*,+,∇Md⁻¹,p)'*p)/2 + _∇Vd(P, q)
 end
-function ∇Hd(P::IDAPBCProblem, x, ps)
+function ∇Hd(P::IDAPBCProblem, qp, ps)
     N = P.N
-    q, p = x[1:N], x[N+1:2N]
+    q, p = qp[1:N], qp[N+1:2N]
     ∇Md⁻¹ = _∇Md⁻¹(P, q, ps)
     (mapreduce(*,+,∇Md⁻¹,p)'*p)/2 + _∇Vd(P, q, ps)
 end
@@ -241,8 +252,8 @@ function controller(P::IDAPBCProblem, x; kv=1)
     Md⁻¹ = _Md⁻¹(P,q)
     MdM⁻¹ = Md⁻¹ \ M⁻¹
     momentum = M⁻¹ \ qdot
-    xbar = [q; momentum]
-    u_es = G⁻¹ * ( ∇H(P,xbar) - MdM⁻¹*∇Hd(P,xbar) + interconnection(P,xbar)*Md⁻¹*momentum )
+    qp = [q; momentum]
+    u_es = G⁻¹ * ( ∇H(P,qp) - MdM⁻¹*∇Hd(P,qp) + interconnection(P,qp)*Md⁻¹*momentum )
     u_di = -kv * dot(P.G, Md⁻¹*momentum)
     return u_es + u_di
 end
@@ -254,8 +265,8 @@ function controller(P::IDAPBCProblem, x, ps; kv=1)
     Md⁻¹ = _Md⁻¹(P,q,ps)
     MdM⁻¹ = Md⁻¹ \ M⁻¹
     momentum = M⁻¹ \ qdot
-    xbar = [q; momentum]
-    u_es = G⁻¹ * ( ∇H(P,xbar) - MdM⁻¹*∇Hd(P,xbar,ps) + interconnection(P,xbar,ps)*Md⁻¹*momentum )
+    qp = [q; momentum]
+    u_es = G⁻¹ * ( ∇H(P,qp) - MdM⁻¹*∇Hd(P,qp,ps) + interconnection(P,qp,ps)*Md⁻¹*momentum )
     u_di = -kv * dot(P.G, Md⁻¹*momentum)
     return u_es + u_di
 end
