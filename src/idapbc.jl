@@ -62,6 +62,42 @@ function Base.show(io::IO, p::IDAPBCProblem)
     println(io, "Vd   => $(typeof(p.Vd).name.name)");
     println(io, "J2   => $(typeof(p.J2).name.name)");
 end
+function Base.getindex(P::IDAPBCProblem, sym::Symbol) 
+    isimplicit = false
+    for f in trainable(P)
+        isimplicit = isimplicit || isa(f, Chain) 
+    end
+    warnmsg = "This is an implicit-parameter model." 
+    warnmsg *= " Parameters passsed as arguments are ignored\n"
+    warnmsg *= "Avoid this warning by using single-argument function calls"
+    warnignore(ps) = !ismissing(ps) && @warn warnmsg
+    if sym === :Md
+        if isimplicit
+            return (q,ps=missing)->begin warnignore(ps); inv(_Md⁻¹(P,q)) end
+        else
+            return (q,ps)->inv(_Md⁻¹(P,q,ps))
+        end
+    elseif sym === :Mdinv
+        if isimplicit
+            return (q,ps=missing)->begin warnignore(ps); _Md⁻¹(P,q) end
+        else
+            return (q,ps)->_Md⁻¹(P,q,ps)
+        end
+    elseif sym === :Vd
+        if isimplicit
+            return (q,ps=missing)->begin warnignore(ps); _Vd(P,q) end
+        else
+            return (q,ps)->_Vd(P,q,ps)
+        end
+    elseif sym === :J2
+        isnothing(P.J2) && return nothing
+        if isimplicit
+            return (q,ps=missing)->begin warnignore(ps); interconnection(P,q) end
+        else
+            return (q,ps)->interconnection(P,q,ps)
+        end
+    end
+end
 
 hasfreevariables(::IDAPBCProblem{J2}) where {J2} = J2===Nothing
 
