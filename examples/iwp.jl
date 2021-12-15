@@ -71,8 +71,8 @@ function eom!(dx,x,u)
     q1, q2, q1dot, q2dot = x
     dx[1] = q1dot
     dx[2] = q2dot
-    dx[3] = m3*sin(q1)/I1 - u/I1
-    dx[4] = u/I2
+    dx[3] = m3*sin(q1)/I1 - u/I1 - 5/1000*q1dot/I1
+    dx[4] = u/I2 - 5/1000*q2dot/I2
 end
 function eom(x,u)
     dx = similar(x)
@@ -87,7 +87,7 @@ IDAPBC
 
 function build_idapbc_model()
     # Md⁻¹ = trueMd⁻¹
-    Md⁻¹ = PSDMatrix(2, ()->inv(diagm([0.1, sqrt(0.02)])))
+    Md⁻¹ = PSDMatrix(2, ()->[31.622776601683793,0,0,22.360679774997898])
     # Vd = Chain(
     #     # inmap, Dense(4, 10, elu; bias=false),
     #     Dense(2, 10, elu; bias=false),
