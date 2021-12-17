@@ -23,6 +23,7 @@ include("idapbc.jl")
 include("soslayers.jl")
 include("constants.jl")
 include("systems.jl")
+include("neuralpbc.jl")
 include("optimize.jl")
 
 end
