@@ -1,31 +1,29 @@
 module MLBasedESC
 
-using ReverseDiff
-using Flux
-import Flux: Chain, Dense, relu, glorot_uniform, ADAM, throttle, Data, Optimise
-using Zygote
-
+using Base: front, tail
 using LinearAlgebra
-using Random: randperm
 using Revise
-using SparseArrays
+using Printf
 
-using Convex, Mosek
+import Flux
+import Flux.Zygote
+using Flux: Chain, Dense, elu
 
-using Printf      
-using Formatting
-using Random
+import DiffEqFlux
+using DiffEqFlux: FastChain, FastDense
 
 using DynamicPolynomials
 
-include("utils.jl")
-include("neural_net.jl")
-include("sos.jl")
-include("hamiltonian.jl")
-include("ida_pbc.jl")
-include("loss.jl")
+import ReverseDiff
+
+using OrdinaryDiffEq, SciMLBase
+
+include("fluxhelpers.jl")
+include("idapbc.jl")
+include("soslayers.jl")
 include("constants.jl")
-include("systems/abstractsys.jl")
-include("systems/iwp.jl")
+include("systems.jl")
+include("neuralpbc.jl")
+include("optimize.jl")
 
 end

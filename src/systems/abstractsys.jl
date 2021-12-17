@@ -1,1 +1,0 @@
-abstract type IDAPBCSystem end
