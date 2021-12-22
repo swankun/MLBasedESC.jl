@@ -12,7 +12,7 @@ end
 (P::NeuralPBC)(x, ps) = controller(P, x, ps)
 
 function DiffEqFlux.initial_params(P::NeuralPBC{N,HD}) where {N,HD<:FastChain}
-    gains = Flux.glorot_normal(N)
+    gains = ones(Float32,N)
     vcat(DiffEqFlux.initial_params(P.Hd), gains)
 end
 
@@ -78,50 +78,3 @@ function (l::SetDistanceLoss)(x::AbstractMatrix)
     return delta < l.radius ? zero(eltype(x)) : delta - l.radius
 end
 
-
-abstract type AbstractNeuralPBCSampler{N} <: Function end
-
-function (d::AbstractNeuralPBCSampler{N})() where {N}
-    return randn(N)
-end
-function (d::AbstractNeuralPBCSampler{N})(batchsize::Int) where {N}
-    return collect(d() for _=1:batchsize)
-end
-
-struct CustomDagger{N,ODE,F,D} <: AbstractNeuralPBCSampler{N}
-    pode::ODE
-    transformation::F
-    dxstar::D
-end
-function CustomDagger(pode::ODEProblem, xstar::AbstractVector, f::Function=identity; 
-    Σ=LinearAlgebra.I
-)
-    N = length(xstar)
-    dxstar = MvNormal(xstar, Σ)
-    CustomDagger{N,typeof(pode),typeof(f),typeof(dxstar)}(pode,f,dxstar)
-end
-
-function (d::CustomDagger)(batchsize::Int)
-    if rand(Bool)
-        xbar = rand(d.dxstar)
-        xbar[1:2] *= pi
-        x0 = d.transformation(xbar)
-        forward = eachcol(trajectory(d.pode, x0))
-        return collect.(rand(forward, batchsize))
-    else
-        samples = rand(d.dxstar, batchsize)
-        return map(d.transformation, eachcol(samples))
-    end
-end
-function (d::CustomDagger)(batchsize::Int, θ::AbstractVector)
-    if rand(Bool)
-        xbar = rand(d.dxstar)
-        xbar[1:2] *= pi
-        x0 = d.transformation(xbar)
-        forward = collect(eachcol(trajectory(d.pode, x0, θ)))
-        return collect.(rand(forward, batchsize))
-    else
-        samples = rand(d.dxstar, batchsize)
-        return map(d.transformation, eachcol(samples))
-    end
-end
