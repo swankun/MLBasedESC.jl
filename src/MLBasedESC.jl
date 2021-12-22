@@ -14,6 +14,7 @@ using DiffEqFlux: FastChain, FastDense
 
 using DynamicPolynomials
 
+using Distributions
 import ReverseDiff
 
 using OrdinaryDiffEq, SciMLBase
