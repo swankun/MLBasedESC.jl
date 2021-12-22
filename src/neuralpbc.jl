@@ -37,15 +37,28 @@ function gradient(l::NeuralPBCLoss, prob::ODEProblem, x0::VX, θ; dt=0.1) where
 end
 function gradient(l::NeuralPBCLoss, prob::ODEProblem, batch::VB, θ; dt=0.1) where 
     {T<:Real, VX<:Union{Vector{T}, SubArray{T}}, VB<:Vector{VX}}
-    function loss(ps)
-        L = mapreduce(+, batch) do x0
-            traj = trajectory(prob, x0, ps; saveat=dt, sensealg=DiffEqFlux.ReverseDiffAdjoint())
-            l(traj)
+    # function loss(ps)
+    #     L = mapreduce(+, batch) do x0
+    #         traj = trajectory(prob, x0, ps; saveat=dt, sensealg=DiffEqFlux.ReverseDiffAdjoint())
+    #         l(traj)
+    #     end
+    #     L / length(batch)
+    # end
+    # val, back = Zygote.pullback(loss, θ)
+    # return first(back(1)), val
+    batchsize = length(batch)
+    gs = Vector{typeof(θ)}(undef, batchsize)
+    ls = Vector{eltype(batch[1])}(undef, batchsize)
+    Threads.@threads for id in 1:batchsize
+        thisgs, thisls = gradient(l, prob, batch[id], θ, dt=dt)
+        if !isnothing(thisgs)
+            gs[id] = thisgs
+        else
+            gs[id] = 0θ
         end
-        L / length(batch)
+        ls[id] = thisls
     end
-    val, back = Zygote.pullback(loss, θ)
-    return first(back(1)), val
+    (sum(gs)/batchsize, sum(ls)/batchsize)
 end
 function gradient(ls::Tuple{Vararg{L}}, prob::ODEProblem, x0, θ; dt=0.1) where {L<:NeuralPBCLoss}
     loss(ps) = begin
