@@ -9,6 +9,8 @@ struct NeuralPBC{N,HD}
     end
 end
 
+(P::NeuralPBC)(x, ps) = controller(P, x, ps)
+
 function DiffEqFlux.initial_params(P::NeuralPBC{N,HD}) where {N,HD<:FastChain}
     gains = Flux.glorot_uniform(N)
     vcat(DiffEqFlux.initial_params(P.Hd), gains)
