@@ -12,7 +12,7 @@ end
 (P::NeuralPBC)(x, ps) = controller(P, x, ps)
 
 function DiffEqFlux.initial_params(P::NeuralPBC{N,HD}) where {N,HD<:FastChain}
-    gains = Flux.glorot_uniform(N)
+    gains = Flux.glorot_normal(N)
     vcat(DiffEqFlux.initial_params(P.Hd), gains)
 end
 
@@ -37,15 +37,6 @@ function gradient(l::NeuralPBCLoss, prob::ODEProblem, x0::VX, θ; dt=0.1) where
 end
 function gradient(l::NeuralPBCLoss, prob::ODEProblem, batch::VB, θ; dt=0.1) where 
     {T<:Real, VX<:Union{Vector{T}, SubArray{T}}, VB<:Vector{VX}}
-    # function loss(ps)
-    #     L = mapreduce(+, batch) do x0
-    #         traj = trajectory(prob, x0, ps; saveat=dt, sensealg=DiffEqFlux.ReverseDiffAdjoint())
-    #         l(traj)
-    #     end
-    #     L / length(batch)
-    # end
-    # val, back = Zygote.pullback(loss, θ)
-    # return first(back(1)), val
     batchsize = length(batch)
     gs = Vector{typeof(θ)}(undef, batchsize)
     ls = Vector{eltype(batch[1])}(undef, batchsize)
