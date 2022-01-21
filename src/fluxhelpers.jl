@@ -44,6 +44,7 @@ derivative(::typeof(elu)) = delu
 derivative(::typeof(tanh)) = dtanh
 derivative(::typeof(identity)) = (x)->one(eltype(x))
 derivative(::typeof(square)) = (x,::Any=nothing)->2x
+derivative(::typeof(abs)) = sign
 
 jacobian(::typeof(square), x::AbstractVector, ::Any=nothing) = diagm(derivative(square)(x))
 jacobian(l::Dense, x) = hadamard(derivative(l.σ).(x), l.W)

@@ -13,6 +13,7 @@ end
 
 function DiffEqFlux.initial_params(P::NeuralPBC{N,HD}) where {N,HD<:FastChain}
     gains = ones(Float32,N)
+    # gains = Flux.glorot_uniform(N)
     vcat(DiffEqFlux.initial_params(P.Hd), gains)
 end
 
@@ -71,10 +72,10 @@ function SetDistanceLoss(f::Function,xstar,r)
 end
 function (l::SetDistanceLoss)(x::AbstractVector)
     delta = l.f(x)
-    return delta < l.radius ? zero(eltype(x)) : delta - l.radius
+    return ifelse(delta < l.radius, zero(eltype(x)), delta - l.radius)
 end
 function (l::SetDistanceLoss)(x::AbstractMatrix)
     delta = mapreduce(l.f, min, eachcol(x))
-    return delta < l.radius ? zero(eltype(x)) : delta - l.radius
+    return ifelse(delta < l.radius, zero(eltype(x)), delta - l.radius)
 end
 

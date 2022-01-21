@@ -113,7 +113,7 @@ function kineticpde(M⁻¹, Md⁻¹, ∇M⁻¹, ∇Md⁻¹, G⊥, J2=0)
 end
 
 function potentialpde(M⁻¹, Md⁻¹, ∇V, ∇Vd, G⊥)
-    return first(G⊥ * (∇V - (Md⁻¹\M⁻¹)*∇Vd))
+    return G⊥ * (∇V - (Md⁻¹\M⁻¹)*∇Vd)
 end
 
 trainable(p::IDAPBCProblem{Nothing,M,MD,V,VD}) where
@@ -344,7 +344,7 @@ function (L::PDELossPotential)(q)
     ∇Vd = _∇Vd(p, q)
     M⁻¹ = _M⁻¹(p, q)
     Md⁻¹ = _Md⁻¹(p, q)
-    abs(potentialpde(M⁻¹, Md⁻¹, ∇V, ∇Vd, p.G⊥))
+    norm(potentialpde(M⁻¹, Md⁻¹, ∇V, ∇Vd, p.G⊥))
 end
 function (L::PDELossPotential)(q,ps)
     p = L.prob
@@ -352,7 +352,7 @@ function (L::PDELossPotential)(q,ps)
     ∇Vd = _∇Vd(p, q, ps)
     M⁻¹ = _M⁻¹(p, q)
     Md⁻¹ = _Md⁻¹(p, q, ps)
-    abs(potentialpde(M⁻¹, Md⁻¹, ∇V, ∇Vd, p.G⊥))
+    norm(potentialpde(M⁻¹, Md⁻¹, ∇V, ∇Vd, p.G⊥))
 end
 
 struct PotentialHessianSymLoss{P} <: IDAPBCLoss{P}
