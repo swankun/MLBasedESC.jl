@@ -4,7 +4,8 @@ export makeposdef, makeodd, makeskewsym
 function ltril(v::AbstractVector)
     N = length(v)
     M = isqrt(N)
-    LowerTriangular(reshape(v,M,M))
+    ϵ = 1000eps(eltype(v))
+    LowerTriangular(reshape(v,M,M) + ϵ*LinearAlgebra.I)
 end
 function ltril(V::AbstractMatrix)
     cat(map(ltril, eachcol(V))..., dims=(1,2))

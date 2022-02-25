@@ -12,8 +12,8 @@ end
 (P::NeuralPBC)(x, ps) = controller(P, x, ps)
 
 function DiffEqFlux.initial_params(P::NeuralPBC{N,HD}) where {N,HD<:FastChain}
-    gains = ones(Float32,N)
-    # gains = Flux.glorot_uniform(N)
+    # gains = ones(Float32,N)
+    gains = Flux.glorot_uniform(N)
     vcat(DiffEqFlux.initial_params(P.Hd), gains)
 end
 
