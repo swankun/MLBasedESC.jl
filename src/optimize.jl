@@ -6,7 +6,7 @@ function optimize!(loss::IDAPBCLoss{P}, paramvec::AbstractVector, data;
 
     batchgs = Vector{typeof(paramvec)}(undef, batchsize)
     dataloader = Flux.Data.DataLoader(data; batchsize=batchsize, shuffle=true)
-    max_batch = round(Int, dataloader.imax / dataloader.batchsize, RoundUp)
+    max_batch = round(Int, length(data) / dataloader.batchsize, RoundUp)
     optimizer = Flux.ADAM(η)
     nepoch = 0;
     train_loss = 1/length(data) * pmap(x->loss(x,paramvec), data)
@@ -39,7 +39,7 @@ function optimize!(loss::IDAPBCLoss{P}, paramvec::Flux.Params, data;
     
     batchgs = Vector{Zygote.Grads}(undef, batchsize)
     dataloader = Flux.Data.DataLoader(data; batchsize=batchsize, shuffle=true)
-    max_batch = round(Int, dataloader.imax / dataloader.batchsize, RoundUp)
+    max_batch = round(Int, length(data) / dataloader.batchsize, RoundUp)
     optimizer = Flux.ADAM(η)
     nepoch = 0;
     train_loss = 1/length(data) * pmap(x->loss(x), data)
