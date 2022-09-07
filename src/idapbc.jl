@@ -111,15 +111,21 @@ isimplicit(P::IDAPBCProblem) = any(f->isa(f,Chain), trainable(P))
 function kineticpde(M⁻¹, Md⁻¹, ∇M⁻¹, ∇Md⁻¹, G⊥, J2=0) 
     return G⊥ * (∇M⁻¹' - (Md⁻¹\M⁻¹)*∇Md⁻¹' + J2*Md⁻¹)
 end
+function kineticpde(M⁻¹::Vector, Md⁻¹, ∇M⁻¹, ∇Md⁻¹, G⊥::Vector, J2=0) 
+    return G⊥ .* (∇M⁻¹' - (Md⁻¹\M⁻¹).*∇Md⁻¹' + J2.*Md⁻¹)
+end
 
 function potentialpde(M⁻¹, Md⁻¹, ∇V, ∇Vd, G⊥)
     return G⊥ * (∇V - (Md⁻¹\M⁻¹)*∇Vd)
+end
+function potentialpde(M⁻¹::Vector, Md⁻¹, ∇V, ∇Vd, G⊥::Vector)
+    return G⊥ .* (∇V - (Md⁻¹\M⁻¹).*∇Vd)
 end
 
 trainable(p::IDAPBCProblem{Nothing,M,MD,V,VD}) where
     {M,V,MD<:UFA,VD<:UFA} = (p.Md⁻¹, p.Vd)
 trainable(p::IDAPBCProblem{Nothing,M,MD,V,VD}) where
-    {M,V,MD<:Matrix,VD<:UFA} = (p.Vd,)
+    {M,V,MD<:AbstractVecOrMat,VD<:UFA} = (p.Vd,)
 trainable(p::IDAPBCProblem{J,M,MD,V,VD}) where
     {M,V,MD<:UFA,VD<:UFA,N,J<:NTuple{N,<:UFA}} = (p.Md⁻¹, p.Vd, p.J2...)
 function unstack(ts::NTuple{N,Function}, ps) where N
@@ -132,9 +138,9 @@ unstack(p::IDAPBCProblem, ps) = unstack(trainable(p), ps)
 unstack(::IDAPBCProblem, ::Nothing) = nothing
 paramstack(p::IDAPBCProblem) = vcat(DiffEqFlux.initial_params.(trainable(p))...)
 
-_M⁻¹(P::IDAPBCProblem{J2,M}, ::Any) where {J2,M<:Matrix} = P.M⁻¹
+_M⁻¹(P::IDAPBCProblem{J2,M}, ::Any) where {J2,M<:AbstractVecOrMat} = P.M⁻¹
 _M⁻¹(P::IDAPBCProblem{J2,M}, q) where {J2,M<:Function} = P.M⁻¹(q)
-_Md⁻¹(P::IDAPBCProblem{J2,M,MD}, q, ::Any=nothing) where {J2,M,MD<:Matrix} = P.Md⁻¹
+_Md⁻¹(P::IDAPBCProblem{J2,M,MD}, q, ::Any=nothing) where {J2,M,MD<:AbstractVecOrMat} = P.Md⁻¹
 _Md⁻¹(P::IDAPBCProblem{J2,M,MD}, q) where {J2,M,MD<:Chain} = P.Md⁻¹(q)
 function _Md⁻¹(P::IDAPBCProblem{J2,M,MD}, q) where {J2,M,MD<:Function} 
     P.Md⁻¹(q)
@@ -143,9 +149,9 @@ function _Md⁻¹(P::IDAPBCProblem{J2,M,MD}, q, ps) where {J2,M,MD<:Function}
     θMd = first(unstack(P, ps))
     P.Md⁻¹(q, θMd)
 end
-_∇M⁻¹(P::IDAPBCProblem{J2,M}, q) where {J2,M<:Matrix} = collect(0P.M⁻¹ for _=1:P.N)
+_∇M⁻¹(P::IDAPBCProblem{J2,M}, q) where {J2,M<:AbstractVecOrMat} = collect(0P.M⁻¹ for _=1:P.N)
 _∇M⁻¹(P::IDAPBCProblem{J2,M}, q) where {J2,M<:Function} = jacobian(P.M⁻¹,q)
-_∇Md⁻¹(P::IDAPBCProblem{J2,M,MD}, q, ::Any=nothing) where {J2,M,MD<:Matrix} = collect(0P.M⁻¹ for _=1:P.N)
+_∇Md⁻¹(P::IDAPBCProblem{J2,M,MD}, q, ::Any=nothing) where {J2,M,MD<:AbstractVecOrMat} = collect(0P.M⁻¹ for _=1:P.N)
 _∇Md⁻¹(P::IDAPBCProblem{J2,M,MD}, q) where {J2,M,MD<:Chain} = jacobian(P.Md⁻¹,q)
 function _∇Md⁻¹(P::IDAPBCProblem{J2,M,MD}, q, ps) where {J2,M,MD<:Function} 
     θMd = first(unstack(P, ps))
@@ -155,7 +161,7 @@ function _∇Md⁻¹(P::IDAPBCProblem{J2,M,MD}, q) where {J2,M,MD<:Function}
     jacobian(P.Md⁻¹, q)
 end
 _Vd(P::IDAPBCProblem{J2,M,MD,V,VD}, q) where {J2,M,MD,V,VD<:Chain} = P.Vd(q)
-function _Vd(P::IDAPBCProblem{J2,M,MD,V,VD}, q, ps) where {J2,M,MD<:Matrix,V,VD<:Function} 
+function _Vd(P::IDAPBCProblem{J2,M,MD,V,VD}, q, ps) where {J2,M,MD<:AbstractVecOrMat,V,VD<:Function} 
     P.Vd(q, ps)
 end
 function _Vd(P::IDAPBCProblem{J2,M,MD,V,VD}, q, ps) where {J2,M,MD<:Function,V,VD<:Function} 
@@ -169,7 +175,7 @@ function _∇Vd(P::IDAPBCProblem{J2,M,MD,V,VD}, q) where {J2,M,MD,V,VD<:Chain}
         return jacobian(P.Vd, q)[:]
     end
 end
-function _∇Vd(P::IDAPBCProblem{J2,M,MD,V,VD}, q, ps) where {J2,M,V,MD<:Matrix,VD<:FastChain}
+function _∇Vd(P::IDAPBCProblem{J2,M,MD,V,VD}, q, ps) where {J2,M,V,MD<:AbstractVecOrMat,VD<:FastChain}
     if isa(last(P.Vd.layers), DiffEqFlux.FastDense) && isequal(last(P.Vd.layers).out, P.N)
         return P.Vd(q, ps)
     else
@@ -184,7 +190,7 @@ function _∇Vd(P::IDAPBCProblem{J2,M,MD,V,VD}, q, ps) where {J2,M,V,MD<:Functio
         return jacobian(P.Vd, q, θVd)[:]
     end
 end
-function _∇Vd(P::IDAPBCProblem{J2,M,MD,V,VD}, q, ps) where {J2,M,V,MD<:Matrix,VD<:Function}
+function _∇Vd(P::IDAPBCProblem{J2,M,MD,V,VD}, q, ps) where {J2,M,V,MD<:AbstractVecOrMat,VD<:Function}
     return jacobian(P.Vd, q, ps)[:]
 end
 function _∇Vd(P::IDAPBCProblem{J2,M,MD,V,VD}, q, ps) where {J2,M,V,MD<:Function,VD<:Function}
@@ -378,7 +384,7 @@ function (L::PotentialHessianSymLoss)(q)
     J = jacobian(L.prob.Vd, q)
     mapreduce(abs, +, J - J')
 end
-function (L::PotentialHessianSymLoss{P})(q, ps) where {J2,M,MD<:Matrix,P<:IDAPBCProblem{J2,M,MD}}
+function (L::PotentialHessianSymLoss{P})(q, ps) where {J2,M,MD<:AbstractVecOrMat,P<:IDAPBCProblem{J2,M,MD}}
     J = jacobian(L.prob.Vd, q, ps)
     mapreduce(abs, +, J - J')
 end
