@@ -111,15 +111,9 @@ isimplicit(P::IDAPBCProblem) = any(f->isa(f,Chain), trainable(P))
 function kineticpde(M⁻¹, Md⁻¹, ∇M⁻¹, ∇Md⁻¹, G⊥, J2=0) 
     return G⊥ * (∇M⁻¹' - (Md⁻¹\M⁻¹)*∇Md⁻¹' + J2*Md⁻¹)
 end
-function kineticpde(M⁻¹::Vector, Md⁻¹, ∇M⁻¹, ∇Md⁻¹, G⊥::Vector, J2=0) 
-    return G⊥ .* (∇M⁻¹' - (Md⁻¹\M⁻¹).*∇Md⁻¹' + J2.*Md⁻¹)
-end
 
 function potentialpde(M⁻¹, Md⁻¹, ∇V, ∇Vd, G⊥)
     return G⊥ * (∇V - (Md⁻¹\M⁻¹)*∇Vd)
-end
-function potentialpde(M⁻¹::Vector, Md⁻¹, ∇V, ∇Vd, G⊥::Vector)
-    return G⊥ .* (∇V - (Md⁻¹\M⁻¹).*∇Vd)
 end
 
 trainable(p::IDAPBCProblem{Nothing,M,MD,V,VD}) where
